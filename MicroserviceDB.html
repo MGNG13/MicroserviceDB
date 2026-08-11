@@ -1,0 +1,3003 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>MicroserviceDB</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <meta name="msapplication-TileColor" content="#ffffff">
+    <meta name="msapplication-TileImage" content="https://plataforma.aplik.com.mx/public/favicon/ms-icon-144x144.png">
+    <meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex, notranslate, max-snippet:0, max-image-preview:none, max-video-preview:0, noai, noimageai">
+    <meta name="googlebot" content="noindex, nofollow, noarchive, nosnippet, noimageindex, notranslate, max-snippet:0, max-image-preview:none, max-video-preview:0">
+    <meta name="bingbot" content="noindex, nofollow, noarchive, nosnippet, noimageindex, notranslate, max-snippet:0, max-image-preview:none, max-video-preview:0">
+    <meta name="yandex" content="noindex, nofollow, noarchive, nosnippet, noimageindex, notranslate, max-snippet:0, max-image-preview:none, max-video-preview:0">
+    <link rel="apple-touch-icon" sizes="180x180" href="https://plataforma.aplik.com.mx/public/favicon/apple-icon-180x180.png">
+    <link rel="icon" type="image/x-icon" sizes="any" href="https://plataforma.aplik.com.mx/public/favicon/favicon.ico">
+    <link rel="icon" type="image/png" sizes="16x16" href="https://plataforma.aplik.com.mx/public/favicon/favicon-16x16.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="https://plataforma.aplik.com.mx/public/favicon/favicon-32x32.png">
+    <link rel="manifest" href="https://plataforma.aplik.com.mx/public/manifest.json">
+    <meta name="msapplication-config" content="https://plataforma.aplik.com.mx/public/favicon/browserconfig.xml">
+    <meta name="theme-color" content="#ffffff">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,200..800;1,200..800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --ink: #16181d;
+            --ink-2: #5a6069;
+            --ink-3: #8b909a;
+            --line: rgba(22,24,29,0.10);
+            --line-2: rgba(22,24,29,0.06);
+            --surface: #ffffff;
+            --surface-2: #f7f8fa;
+            --surface-3: #eef0f3;
+            --accent: #0b7a5b;
+            --accent-soft: rgba(11,122,91,0.10);
+            --accent-line: rgba(11,122,91,0.30);
+            --danger: #c8493b;
+            --danger-soft: rgba(200,73,59,0.10);
+            --warning: #b27313;
+            --info: #2f6db5;
+            --info-soft: rgba(47,109,181,0.10);
+            --radius: 12px;
+            --radius-sm: 9px;
+            --shadow: 0 1px 2px rgba(22,24,29,0.05), 0 8px 24px rgba(22,24,29,0.06);
+            --shadow-pop: 0 12px 40px rgba(22,24,29,0.16);
+            /* JSON syntax */
+            --j-key: #1f6feb;
+            --j-str: #0b7a5b;
+            --j-num: #b25000;
+            --j-bool: #8250df;
+            --j-null: #8b909a;
+            --j-id: #c8493b;
+            --mono: 'JetBrains Mono', 'Consolas', ui-monospace, monospace;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body { height: 100%; }
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background: var(--surface-2);
+            color: var(--ink);
+            -webkit-font-smoothing: antialiased;
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        button { font-family: inherit; }
+        ::selection {
+            background-color: black;
+            color: white;
+        }
+        ::-webkit-scrollbar { width: 10px; height: 10px; }
+        ::-webkit-scrollbar-thumb { background: rgba(22,24,29,0.16); border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(22,24,29,0.28); background-clip: padding-box; border: 2px solid transparent; }
+        header {
+            flex: 0 0 auto;
+            display: flex; align-items: center; justify-content: space-between;
+            gap: 16px;
+            padding: 0 18px; height: 54px;
+            background: var(--surface);
+            border-bottom: 1px solid var(--line);
+        }
+        .head-left { display: flex; align-items: center; gap: 12px; }
+        .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 0.98rem; letter-spacing: -0.01em; }
+        .brand .mark {
+            width: 26px; height: 26px; border-radius: 8px;
+            background: var(--ink); color: #fff;
+            display: grid; place-items: center; font-size: 0.8rem; font-weight: 700;
+        }
+        .brand small { color: var(--ink-3); font-weight: 600; font-size: 0.72rem; letter-spacing: 0.02em; }
+        .head-right { display: flex; align-items: center; gap: 14px; }
+        .conn { display: flex; align-items: center; gap: 9px; font-size: 0.82rem; color: var(--ink-2); font-weight: 600; }
+        .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--danger); box-shadow: 0 0 0 3px var(--danger-soft); transition: all .25s; }
+        .dot.on { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+        .head-btn {
+            position: relative; display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 11px;
+            border-radius: 9px; border: 1px solid var(--line); background: var(--surface);
+            color: var(--ink-2); font-size: 0.82rem; font-weight: 600; cursor: pointer; transition: all .15s;
+        }
+        .head-btn:hover { background: var(--surface-3); color: var(--ink); }
+        .head-btn.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent-line); }
+        .head-btn .bell-badge {
+            position: absolute; top: -6px; right: -6px; min-width: 17px; height: 17px; padding: 0 4px;
+            border-radius: 999px; background: var(--danger); color: #fff; font-size: 0.64rem; font-weight: 700;
+            display: none; align-items: center; justify-content: center; box-shadow: 0 0 0 2px var(--surface);
+        }
+        .head-btn .bell-badge.show { display: flex; }
+        .hamburger {
+            width: 34px; height: 34px; border-radius: 9px; border: 1px solid var(--line); background: var(--surface);
+            color: var(--ink-2); cursor: pointer; display: grid; place-items: center; transition: all .15s;
+        }
+        .hamburger:hover { background: var(--surface-3); color: var(--ink); }
+        .shell { flex: 1 1 auto; display: grid; grid-template-columns: 280px minmax(0, 1fr); min-height: 0; transition: grid-template-columns .18s; }
+        .shell.nav-collapsed { grid-template-columns: minmax(0, 1fr); }
+        .shell.nav-collapsed .sidebar { display: none; }
+        .sidebar { grid-column: 1; background: var(--surface); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+        .side-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 14px 10px; }
+        .side-head .label { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: var(--ink-3); }
+        .side-tools { display: flex; gap: 6px; }
+        .icon-btn {
+            width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--line);
+            background: var(--surface); color: var(--ink-2); cursor: pointer;
+            display: grid; place-items: center; font-size: 0.95rem; line-height: 1; transition: all .15s;
+        }
+        .icon-btn:hover { background: var(--surface-3); color: var(--ink); border-color: var(--line); }
+        .side-search { padding: 0 14px 10px; }
+        .side-search input {
+            width: 100%; height: 34px; padding: 0 12px; border-radius: 9px;
+            border: 1px solid var(--line); background: var(--surface-2); font-family: inherit;
+            font-size: 0.85rem; color: var(--ink); outline: none; transition: all .15s;
+        }
+        .side-search input:focus { background: var(--surface); border-color: var(--accent-line); box-shadow: 0 0 0 3px var(--accent-soft); }
+        .tree { flex: 1 1 auto; overflow-y: auto; padding: 4px 8px 16px; }
+        .node { user-select: none; }
+        .row {
+            display: flex; align-items: center; gap: 4px; min-height: 32px;
+            padding: 0 6px 0 4px; border-radius: 8px; cursor: pointer; position: relative;
+            transition: background .12s;
+        }
+        .row:hover { background: var(--surface-2); }
+        .row.active { background: var(--accent-soft); }
+        .row.active > .row-label { color: var(--accent); font-weight: 650; }
+        .twist {
+            width: 18px; height: 18px; flex: 0 0 auto; display: grid; place-items: center;
+            color: var(--ink-3); font-size: 0.62rem; transition: transform .15s; border-radius: 5px;
+        }
+        .twist:hover { background: rgba(22,24,29,0.06); color: var(--ink); }
+        .twist.open { transform: rotate(90deg); }
+        .twist.leaf { visibility: hidden; }
+        .row-ico { flex: 0 0 auto; width: 18px; display: flex; align-items: center; justify-content: center; color: var(--ink-3); }
+        .row.db > .row-ico { color: var(--ink-2); }
+        .row-label { flex: 1 1 auto; font-size: 0.86rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink); }
+        .row .count { flex: 0 0 auto; font-size: 0.7rem; color: var(--ink-3); font-variant-numeric: tabular-nums; padding-right: 2px; }
+        .row .kebab {
+            flex: 0 0 auto; width: 22px; height: 22px; border: none; background: transparent;
+            border-radius: 6px; cursor: pointer; color: var(--ink-3); font-size: 0.9rem; line-height: 1;
+            opacity: 0; transition: opacity .12s, background .12s; display: grid; place-items: center;
+        }
+        .row:hover .kebab, .row.active .kebab { opacity: 1; }
+        .kebab:hover { background: rgba(22,24,29,0.08); color: var(--ink); }
+        .children { padding-left: 16px; display: none; }
+        .children.open { display: block; }
+        .tree-hint { padding: 8px 10px; font-size: 0.78rem; color: var(--ink-3); font-style: italic; }
+        .tree-retry { margin-left: 6px; font-size: 0.74rem; color: var(--info); cursor: pointer; text-decoration: underline; font-style: normal; }
+        .mini-pager {
+            display: flex; align-items: center; justify-content: space-between; gap: 8px;
+            padding: 8px 10px; margin-top: 4px; border-top: 1px solid var(--line-2);
+        }
+        .mini-pager.compact { padding: 6px 4px 2px; margin-top: 2px; border-top: none; }
+        .mini-pager-info { flex: 1 1 auto; font-size: 0.72rem; color: var(--ink-3); text-align: center; font-variant-numeric: tabular-nums; }
+        .query-row > .row-ico { color: var(--accent); }
+        .main { grid-column: 2; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--surface-2); }
+        .shell.nav-collapsed .main { grid-column: 1; }
+        .empty {
+            flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+            gap: 14px; color: var(--ink-3); text-align: center; padding: 40px;
+        }
+        .empty .big { font-size: 2.6rem; opacity: .5; }
+        .empty h3 { font-size: 1.05rem; color: var(--ink-2); font-weight: 650; }
+        .empty p { font-size: 0.88rem; max-width: 340px; line-height: 1.5; }
+        .workspace { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+        .col-head {
+            flex: 0 0 auto; display: flex; align-items: center; gap: 14px;
+            padding: 13px 20px; background: var(--surface); border-bottom: 1px solid var(--line);
+        }
+        .crumb { display: flex; align-items: center; gap: 8px; font-size: 0.95rem; min-width: 0; }
+        .crumb .db { color: var(--ink-3); font-weight: 600; white-space: nowrap; }
+        .crumb .sep { color: var(--ink-3); }
+        .crumb .col { font-weight: 700; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .col-meta { color: var(--ink-3); font-size: 0.8rem; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .col-head .spacer { flex: 1 1 auto; }
+        .btn {
+            display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 13px;
+            border-radius: 9px; border: 1px solid var(--line); background: var(--surface);
+            color: var(--ink); font-size: 0.84rem; font-weight: 600; cursor: pointer; transition: all .15s; white-space: nowrap;
+        }
+        .btn:hover { background: var(--surface-3); }
+        .btn:active { transform: translateY(0.5px); }
+        .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+        .btn.primary:hover { background: #096b50; }
+        .btn.ghost { border-color: transparent; background: transparent; color: var(--ink-2); }
+        .btn.ghost:hover { background: var(--surface-3); color: var(--ink); }
+        .btn.danger { color: var(--danger); }
+        .btn.sm { height: 30px; padding: 0 10px; font-size: 0.8rem; }
+        .btn .ic { font-size: 0.95rem; line-height: 1; }
+        .ic-svg { display: block; flex: 0 0 auto; }
+        .btn .ic-svg, .menu-item .ic-svg { display: inline-block; vertical-align: middle; }
+        #opts-caret { display: inline-flex; align-items: center; transition: transform .15s; }
+        #opts-caret.open { transform: rotate(90deg); }
+        .qbar { flex: 0 0 auto; background: var(--surface); border-bottom: 1px solid var(--line); padding: 12px 20px; }
+        .qbar-main { display: flex; align-items: stretch; gap: 8px; }
+        .field { display: flex; flex-direction: column; min-width: 0; }
+        .field.grow { flex: 1 1 auto; }
+        .field > .flabel {
+            font-size: 0.66rem; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase;
+            color: var(--ink-3); margin-bottom: 4px; padding-left: 2px;
+            display: flex; align-items: center; gap: 10px;
+        }
+        .codeinput {
+            width: 100%; min-height: 38px; padding: 9px 12px; border-radius: 9px;
+            border: 1px solid var(--line); background: var(--surface-2); color: var(--ink);
+            font-family: var(--mono); font-size: 0.82rem; outline: none; resize: none; line-height: 1.4;
+            transition: all .15s;
+        }
+        .codeinput::placeholder { color: var(--ink-3); }
+        .codeinput:focus { background: var(--surface); border-color: var(--accent-line); box-shadow: 0 0 0 3px var(--accent-soft); }
+        .codeinput.invalid { border-color: var(--danger); box-shadow: 0 0 0 3px var(--danger-soft); }
+        .filter-field input { font-family: var(--mono); }
+        textarea#q-filter { resize: vertical; }
+        .qbar-actions { display: flex; align-items: flex-end; gap: 8px; }
+        .qopts { display: none; margin-top: 12px; }
+        .qopts.open { display: flex; flex-direction: column; gap: 16px; }
+        .qb-section { display: flex; flex-direction: column; gap: 8px; }
+        .qb-section > .flabel {
+            font-size: 0.66rem; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase;
+            color: var(--ink-3); padding-left: 2px;
+        }
+        .qb-inline { flex-direction: row; gap: 14px; align-items: flex-end; }
+        .qb-num { max-width: 120px; min-height: 36px; }
+        .qb-limit { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .qb-presets { display: flex; gap: 5px; }
+        .qb-hint { font-size: 0.78rem; color: var(--ink-3); font-style: italic; padding: 2px; }
+        .qb-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .qb-row.qb-match { gap: 8px; margin-bottom: 2px; }
+        .qb-mini-label { font-size: 0.78rem; color: var(--ink-2); font-weight: 600; }
+        .qb-field { flex: 1 1 160px; min-width: 120px; min-height: 36px; }
+        .qb-val { flex: 2 1 220px; min-width: 140px; min-height: 36px; }
+        .qb-op {
+            height: 36px; padding: 0 8px; border-radius: 9px; border: 1px solid var(--line);
+            background: var(--surface-2); font-family: inherit; font-size: 0.82rem; color: var(--ink); cursor: pointer; outline: none;
+        }
+        .qb-op:focus { border-color: var(--accent-line); box-shadow: 0 0 0 3px var(--accent-soft); }
+        .qb-del { flex: 0 0 auto; }
+        .qb-add { align-self: flex-start; }
+        .seg-mini { padding: 2px; }
+        .seg-mini button { padding: 3px 9px; font-size: 0.72rem; }
+        .qbar-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; }
+        .qbar-foot .left { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .toggle-link { font-size: 0.78rem; color: var(--ink-2); cursor: pointer; font-weight: 600; display: inline-flex; align-items: center; gap: 5px; }
+        .toggle-link:hover { color: var(--ink); }
+        .saved-wrap { position: relative; }
+        .chip {
+            display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px;
+            border-radius: 999px; border: 1px solid var(--line); background: var(--surface);
+            font-size: 0.78rem; font-weight: 600; color: var(--ink-2); cursor: pointer; transition: all .15s;
+        }
+        .chip:hover { border-color: var(--accent-line); color: var(--accent); }
+        .chip .x { color: var(--ink-3); font-size: 0.9rem; }
+        .chip .x:hover { color: var(--danger); }
+        .chip.preset { height: 26px; padding: 0 9px; font-size: 0.74rem; }
+        .chip.preset.on { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent); }
+        .res-tools {
+            flex: 0 0 auto; display: flex; align-items: center; gap: 12px;
+            padding: 9px 20px; background: var(--surface-2); border-bottom: 1px solid var(--line-2);
+        }
+        .seg { display: inline-flex; background: var(--surface-3); border-radius: 9px; padding: 3px; gap: 2px; }
+        .seg button {
+            border: none; background: transparent; padding: 5px 12px; border-radius: 7px; cursor: pointer;
+            font-size: 0.78rem; font-weight: 600; color: var(--ink-2); transition: all .12s;
+        }
+        .seg button.on { background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
+        .res-tools .spacer { flex: 1; }
+        .pager { display: flex; align-items: center; gap: 4px; font-size: 0.8rem; color: var(--ink-2); font-weight: 600; }
+        .pager .range { font-variant-numeric: tabular-nums; padding: 0 6px; white-space: nowrap; }
+        .pg-btn { width: 28px; height: 28px; border-radius: 7px; border: 1px solid var(--line); background: var(--surface); cursor: pointer; color: var(--ink-2); display: grid; place-items: center; }
+        .pg-btn:hover:not(:disabled) { background: var(--surface-3); color: var(--ink); }
+        .pg-btn:disabled { opacity: .4; cursor: not-allowed; }
+        .results { flex: 1 1 auto; overflow: auto; padding: 14px 20px 28px; }
+        .loading-state, .res-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 60px 20px; color: var(--ink-3); gap: 10px; }
+        .spinner { width: 22px; height: 22px; border: 2.5px solid var(--surface-3); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .doc {
+            background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm);
+            margin-bottom: 8px; overflow: hidden; transition: border-color .15s, box-shadow .15s;
+        }
+        .doc:hover { border-color: rgba(22,24,29,0.18); box-shadow: var(--shadow); }
+        .doc-top { display: flex; align-items: center; gap: 8px; padding: 8px 10px 8px 8px; }
+        .doc-twist { width: 20px; height: 20px; flex: 0 0 auto; display: grid; place-items: center; border: none; background: transparent; cursor: pointer; color: var(--ink-3); font-size: 0.62rem; border-radius: 5px; transition: transform .15s; }
+        .doc-twist:hover { background: var(--surface-3); color: var(--ink); }
+        .doc-twist.open { transform: rotate(90deg); }
+        .doc-id { font-family: var(--mono); font-size: 0.78rem; color: var(--ink-2); display: flex; align-items: center; gap: 7px; min-width: 0; }
+        .doc-id b { color: var(--j-id); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 320px; }
+        .doc-id .k { color: var(--ink-3); }
+        .doc-preview { flex: 1 1 auto; font-family: var(--mono); font-size: 0.78rem; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+        .doc-metric { flex: 0 0 auto; font-family: var(--mono); font-size: 0.72rem; color: var(--ink-3); background: rgba(148,163,184,0.08); border: 1px solid var(--line); border-radius: 999px; padding: 4px 8px; white-space: nowrap; }
+        .doc-acts { flex: 0 0 auto; display: flex; gap: 2px; opacity: 0; transition: opacity .12s; }
+        .doc:hover .doc-acts { opacity: 1; }
+        .da { width: 28px; height: 28px; border-radius: 7px; border: 1px solid transparent; background: transparent; cursor: pointer; color: var(--ink-3); display: grid; place-items: center; font-size: 0.82rem; transition: all .12s; }
+        .da:hover { background: var(--surface-3); color: var(--ink); }
+        .da.del:hover { background: var(--danger-soft); color: var(--danger); }
+        .doc-body { display: none; border-top: 1px solid var(--line-2); background: var(--surface-2); padding: 12px 14px; }
+        .doc-body.open { display: block; }
+        .json {
+            font-family: var(--mono); font-size: 0.8rem; line-height: 1.55; white-space: pre-wrap;
+            word-break: break-word; color: var(--ink); margin: 0;
+        }
+        .jk { color: var(--j-key); }
+        .js { color: var(--j-str); }
+        .jn { color: var(--j-num); }
+        .jb { color: var(--j-bool); }
+        .ju { color: var(--j-null); }
+        .jp { color: var(--ink-3); }
+        .tablewrap { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm); overflow: auto; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+        thead th {
+            position: sticky; top: 0; background: var(--surface-3); text-align: left; padding: 0;
+            font-weight: 700; font-size: 0.7rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-2);
+            border-bottom: 1px solid var(--line); white-space: nowrap; z-index: 1;
+        }
+        thead th.plain { padding: 9px 12px; }
+        .th-inner { display: flex; align-items: center; gap: 6px; padding: 7px 8px 7px 12px; }
+        .th-label { cursor: pointer; user-select: none; display: inline-flex; align-items: center; gap: 5px; flex: 1 1 auto; }
+        .th-label:hover { color: var(--ink); }
+        .th-sort { color: var(--accent); font-size: 0.8rem; }
+        .th-menu {
+            flex: 0 0 auto; width: 22px; height: 22px; border: 1px solid transparent; background: transparent;
+            border-radius: 6px; cursor: pointer; color: var(--ink-3); display: grid; place-items: center; opacity: .55; transition: all .12s;
+        }
+        .th-menu:hover { background: var(--surface); color: var(--ink); opacity: 1; }
+        th.col-filtered .th-menu { color: var(--info); opacity: 1; }
+        th.col-filtered { background: var(--info-soft); }
+        tbody td { padding: 8px 12px; border-bottom: 1px solid var(--line-2); font-family: var(--mono); font-size: 0.78rem; color: var(--ink); max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: top; }
+        tbody tr:hover { background: var(--surface-2); }
+        tbody td.col-id { color: var(--j-id); }
+        td .rowacts { display: flex; gap: 2px; }
+        td.acts-cell { white-space: nowrap; }
+        .row-metric { font-family: var(--mono); font-size: 0.72rem; color: var(--ink-3); margin-right: 8px; }
+        .cell-weighted { transition: background-color .12s ease, color .12s ease; }
+        .raw {
+            background: #15171c; color: #d7dbe0; border-radius: var(--radius-sm); padding: 16px 18px;
+            font-family: var(--mono); font-size: 0.8rem; line-height: 1.55; white-space: pre-wrap; word-break: break-word;
+        }
+        .raw .jk { color: #79b8ff; } .raw .js { color: #7ee2b8; } .raw .jn { color: #ffab70; }
+        .raw .jb { color: #c8a6ff; } .raw .ju { color: #6b7280; } .raw .jp { color: #6b7280; }
+        .menu {
+            position: fixed; z-index: 9000; background: var(--surface); border: 1px solid var(--line);
+            border-radius: 11px; box-shadow: var(--shadow-pop); padding: 5px; min-width: 200px; display: none;
+        }
+        .menu.open { display: block; }
+        .menu-item {
+            width: 100%; display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px;
+            border: none; background: transparent; cursor: pointer; font-size: 0.85rem; color: var(--ink); text-align: left; font-weight: 500;
+        }
+        .menu-item .mi-ic { width: 18px; display: flex; align-items: center; justify-content: center; color: var(--ink-3); }
+        .menu-item:hover { background: var(--surface-2); }
+        .menu-item.danger { color: var(--danger); }
+        .menu-item.danger .mi-ic { color: var(--danger); }
+        .menu-item.danger:hover { background: var(--danger-soft); }
+        .menu-sep { height: 1px; background: var(--line-2); margin: 4px 6px; }
+        .menu-empty { padding: 8px 10px; font-size: 0.8rem; color: var(--ink-3); font-style: italic; }
+        .overlay { position: fixed; inset: 0; background: rgba(22,24,29,0.45); backdrop-filter: blur(3px); display: none; align-items: center; justify-content: center; z-index: 10000; padding: 20px; }
+        .overlay.open { display: flex; }
+        .modal { background: var(--surface); border-radius: 16px; width: 100%; max-width: 720px; max-height: 88vh; display: flex; flex-direction: column; box-shadow: var(--shadow-pop); overflow: hidden; animation: pop .18s ease; }
+        @keyframes pop { from { opacity: 0; transform: scale(.98) translateY(6px); } to { opacity: 1; transform: none; } }
+        .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+        .modal-head h3 { font-size: 1.02rem; font-weight: 700; }
+        .modal-head .sub { font-size: 0.76rem; color: var(--ink-3); font-family: var(--mono); margin-top: 2px; }
+        .x-btn { width: 30px; height: 30px; border-radius: 8px; border: none; background: var(--surface-2); cursor: pointer; font-size: 1.1rem; color: var(--ink-2); display: grid; place-items: center; }
+        .x-btn:hover { background: var(--surface-3); color: var(--ink); }
+        .modal-body { padding: 16px 20px; overflow: auto; flex: 1 1 auto; }
+        .editor { width: 100%; min-height: 360px; padding: 14px; border-radius: 11px; border: 1px solid var(--line); background: var(--surface-2); font-family: var(--mono); font-size: 0.84rem; line-height: 1.55; color: var(--ink); outline: none; resize: vertical; tab-size: 2; }
+        .editor:focus { background: var(--surface); border-color: var(--accent-line); box-shadow: 0 0 0 3px var(--accent-soft); }
+        .editor.invalid { border-color: var(--danger); box-shadow: 0 0 0 3px var(--danger-soft); }
+        .editor-status { margin-top: 8px; font-size: 0.78rem; font-weight: 600; min-height: 18px; }
+        .editor-status.ok { color: var(--accent); }
+        .editor-status.err { color: var(--danger); }
+        .modal-foot { display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 14px 20px; border-top: 1px solid var(--line); }
+        .modal-view .json { background: var(--surface-2); padding: 14px; border-radius: 11px; border: 1px solid var(--line); }
+        .input {
+            width: 100%; height: 40px; padding: 0 13px; border-radius: 10px; border: 1px solid var(--line);
+            background: var(--surface-2); font-family: inherit; font-size: 0.9rem; color: var(--ink); outline: none; transition: all .15s;
+        }
+        .input:focus { background: var(--surface); border-color: var(--accent-line); box-shadow: 0 0 0 3px var(--accent-soft); }
+        .field-label { font-size: 0.8rem; font-weight: 600; color: var(--ink-2); margin-bottom: 6px; display: block; }
+        .help { font-size: 0.76rem; color: var(--ink-3); margin-top: 6px; line-height: 1.4; }
+        .toasts { position: fixed; bottom: 18px; right: 18px; z-index: 11000; display: flex; flex-direction: column; gap: 8px; }
+        .toast { background: var(--ink); color: #fff; padding: 11px 15px; border-radius: 10px; font-size: 0.84rem; font-weight: 600; box-shadow: var(--shadow-pop); display: flex; align-items: center; gap: 9px; animation: toastIn .2s ease; max-width: 360px; }
+        .toast.err { background: var(--danger); }
+        .toast.ok { background: var(--accent); }
+        .toast.info { background: var(--info); }
+        @keyframes toastIn { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: none; } }
+        /* ---------- Panel de actividad (feature 4) ---------- */
+        .activity {
+            position: fixed; top: 54px; right: 0; bottom: 0; width: 400px; max-width: 92vw;
+            background: var(--surface); border-left: 1px solid var(--line); box-shadow: var(--shadow-pop);
+            z-index: 600; display: flex; flex-direction: column; transform: translateX(100%); transition: transform .2s; min-height: 0;
+        }
+        .activity.open { transform: none; }
+        .activity-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+        .activity-head h3 { font-size: 0.96rem; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+        .activity-head .a-tools { display: flex; align-items: center; gap: 6px; }
+        .activity-list { flex: 1 1 auto; overflow-y: auto; padding: 10px 12px 24px; display: flex; flex-direction: column; gap: 8px; }
+        .act-empty { color: var(--ink-3); font-size: 0.84rem; text-align: center; padding: 40px 16px; font-style: italic; }
+        .activity-list > .mini-pager { margin-top: 6px; border-top: none; padding: 0; }
+        .act-item { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--surface); }
+        .act-item.external { border-color: var(--info-soft); box-shadow: 0 0 0 2px var(--info-soft); }
+        .act-top { display: flex; align-items: center; gap: 8px; padding: 9px 11px; cursor: pointer; }
+        .act-top:hover { background: var(--surface-2); }
+        .act-badge { flex: 0 0 auto; height: 20px; padding: 0 8px; border-radius: 999px; font-size: 0.66rem; font-weight: 700; letter-spacing: 0.02em; display: inline-flex; align-items: center; text-transform: uppercase; }
+        .act-badge.ins { background: var(--accent-soft); color: var(--accent); }
+        .act-badge.del { background: var(--danger-soft); color: var(--danger); }
+        .act-badge.upd { background: rgba(178,115,19,0.14); color: var(--warning); }
+        .act-badge.struct { background: var(--info-soft); color: var(--info); }
+        .act-target { flex: 1 1 auto; font-family: var(--mono); font-size: 0.76rem; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .act-time { flex: 0 0 auto; font-size: 0.7rem; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+        .act-origin { flex: 0 0 auto; font-size: 0.62rem; font-weight: 700; padding: 1px 6px; border-radius: 999px; }
+        .act-origin.me { background: var(--surface-3); color: var(--ink-3); }
+        .act-origin.ext { background: var(--info-soft); color: var(--info); }
+        .act-body { display: none; border-top: 1px solid var(--line-2); background: var(--surface-2); padding: 10px 12px; }
+        .act-body.open { display: block; }
+        .act-ba { margin-bottom: 8px; }
+        .act-ba:last-child { margin-bottom: 0; }
+        .act-ba .lbl { font-size: 0.66rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 4px; }
+        .act-json { font-family: var(--mono); font-size: 0.72rem; line-height: 1.5; white-space: pre-wrap; word-break: break-word; max-height: 220px; overflow: auto; background: var(--surface); border: 1px solid var(--line-2); border-radius: 8px; padding: 8px 10px; }
+        @media (max-width: 920px) {
+            .shell { grid-template-columns: 1fr; }
+            .shell.nav-collapsed { grid-template-columns: 1fr; }
+            .sidebar { position: fixed; inset: 54px auto 0 0; width: 280px; z-index: 500; transform: translateX(-100%); transition: transform .2s; box-shadow: var(--shadow-pop); display: flex; }
+            .shell.nav-collapsed .sidebar { display: flex; }
+            .sidebar.show { transform: none; }
+            .col-head { flex-wrap: wrap; }
+        }
+        /* ---------- Importar / Exportar ---------- */
+        .imp-list { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+        .imp-row { display: flex; align-items: center; gap: 10px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
+        .imp-row .imp-name { flex: 1 1 auto; height: 34px; padding: 0 11px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); font-family: var(--mono); font-size: 0.82rem; color: var(--ink); outline: none; min-width: 0; }
+        .imp-row .imp-name:focus { border-color: var(--accent-line); box-shadow: 0 0 0 3px var(--accent-soft); }
+        .imp-row .imp-meta { flex: 0 0 auto; font-size: 0.74rem; color: var(--ink-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .badge { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 999px; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.02em; white-space: nowrap; }
+        .badge.warn { background: rgba(178,115,19,0.12); color: var(--warning); }
+        .badge.new { background: var(--accent-soft); color: var(--accent); }
+        .pick-list { display: flex; flex-direction: column; gap: 2px; max-height: 320px; overflow: auto; margin-top: 4px; border: 1px solid var(--line); border-radius: 10px; padding: 6px; }
+        .pick-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
+        .pick-row:hover { background: var(--surface-2); }
+        .pick-row input { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
+        .pick-row .pk-name { flex: 1 1 auto; font-size: 0.86rem; color: var(--ink); }
+        .pick-row .pk-meta { font-size: 0.74rem; color: var(--ink-3); }
+        .mode-group { display: flex; gap: 8px; flex-wrap: wrap; margin: 6px 0 14px; }
+        .mode-opt { display: flex; align-items: center; gap: 7px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 9px; cursor: pointer; font-size: 0.82rem; font-weight: 600; color: var(--ink-2); }
+        .mode-opt input { accent-color: var(--accent); }
+        .mode-opt.sel { border-color: var(--accent-line); background: var(--accent-soft); color: var(--accent); }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="head-left">
+            <button class="hamburger" id="nav-toggle" title="Mostrar/ocultar panel" onclick="App.toggleSidebar()"><svg class="ic-svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+            <div class="brand">
+                <span class="mark">DB</span>
+                <span>MicroserviceDB <small>· Databases, Collections, Documents</small></span>
+            </div>
+        </div>
+        <div class="head-right">
+            <button class="head-btn" id="activity-btn" title="Actividad en tiempo real" onclick="App.toggleActivity()">
+                <svg class="ic-svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 8-3 8h18s-3-1-3-8"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+                <span>Actividad</span>
+                <span class="bell-badge" id="activity-badge">0</span>
+            </button>
+            <div class="conn">
+                <span class="dot" id="ws-dot"></span>
+                <span id="ws-text">Desconectado</span>
+            </div>
+        </div>
+    </header>
+    <div class="shell" id="shell">
+        <aside class="sidebar" id="sidebar">
+            <div class="side-head">
+                <span class="label">Bases de datos</span>
+                <div class="side-tools">
+                    <button class="icon-btn" title="Refrescar" onclick="App.refresh()"><svg class="ic-svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 12a8.5 8.5 0 1 1-2.6-6.1"/><path d="M20.5 4.5V10h-5.5"/></svg></button>
+                    <button class="icon-btn" title="Importar base(s) de datos" onclick="App.importDatabasesPrompt()"><svg class="ic-svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 20.5h14"/><path d="M12 16V4"/><path d="M7.5 8.5 12 4l4.5 4.5"/></svg></button>
+                    <button class="icon-btn" title="Exportar bases de datos" onclick="App.exportDatabasesPrompt()"><svg class="ic-svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7.5 10.5 12 15l4.5-4.5"/><path d="M5 20.5h14"/></svg></button>
+                    <button class="icon-btn" title="Nueva base de datos" onclick="App.newDatabase()"><svg class="ic-svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></button>
+                </div>
+            </div>
+            <div class="side-search">
+                <input id="tree-filter" type="text" placeholder="Filtrar…" oninput="App.onTreeFilterInput()">
+            </div>
+            <div class="tree" id="tree"></div>
+        </aside>
+        <main class="main" id="main">
+            <div class="empty" id="empty">
+                <div class="big"><svg viewBox="0 0 24 24" width="58" height="58" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg></div>
+                <h3>Selecciona una colección</h3>
+                <p>Elige una base de datos y una colección en el panel izquierdo para explorar, filtrar y editar documentos.</p>
+            </div>
+            <div class="workspace" id="workspace" style="display:none;">
+                <div class="col-head">
+                    <div class="crumb">
+                        <span class="db" id="crumb-db">—</span>
+                        <span class="sep">›</span>
+                        <span class="col" id="crumb-col">—</span>
+                    </div>
+                    <span class="col-meta" id="col-meta"></span>
+                    <span class="spacer"></span>
+                    <button class="btn primary" onclick="App.insertDocument()"><svg class="ic-svg" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg> Insertar documento</button>
+                    <button class="btn ghost" id="col-kebab" title="Acciones de colección"><svg class="ic-svg" viewBox="0 0 24 24" width="18" height="18" fill="currentColor" stroke="none"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button>
+                </div>
+                <div class="qbar">
+                    <div class="qbar-main">
+                        <div class="field grow filter-field">
+                            <span class="flabel">
+                                Filtro
+                                <span class="seg seg-mini" id="filter-mode-seg">
+                                    <button data-fm="simple" onclick="App.setFilterMode('simple')">Asistente</button>
+                                    <button data-fm="advanced" class="on" onclick="App.setFilterMode('advanced')">Avanzado · Mongo</button>
+                                </span>
+                            </span>
+                            <div id="filter-simple" style="display:none;"></div>
+                            <textarea class="codeinput" id="q-filter" rows="1" placeholder='{ "active": true }'
+                                onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();App.runQuery();}" oninput="App.validateField(this)">{}</textarea>
+                        </div>
+                        <div class="qbar-actions">
+                            <button class="btn primary" onclick="App.runQuery()"><svg class="ic-svg" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.2-4.2"/></svg> Buscar</button>
+                            <button class="btn" onclick="App.resetQuery()">Limpiar</button>
+                        </div>
+                    </div>
+                    <div class="qopts" id="qopts">
+                        <div class="qb-section">
+                            <span class="flabel">Proyección · campos a mostrar</span>
+                            <div class="seg" id="proj-mode-seg">
+                                <button data-pm="none" class="on" onclick="App.setProjectMode('none')">Todos</button>
+                                <button data-pm="include" onclick="App.setProjectMode('include')">Solo estos</button>
+                                <button data-pm="exclude" onclick="App.setProjectMode('exclude')">Ocultar estos</button>
+                            </div>
+                            <div id="proj-builder"></div>
+                        </div>
+                        <div class="qb-section">
+                            <span class="flabel">Orden · ordenar por</span>
+                            <div id="sort-builder"></div>
+                        </div>
+                        <div class="qb-section qb-inline">
+                            <div class="field">
+                                <span class="flabel">Saltar</span>
+                                <input class="codeinput qb-num" id="q-skip" value="0" inputmode="numeric" onchange="App.onSkipInput()" onkeydown="if(event.key==='Enter'){event.preventDefault();App.runQuery();}">
+                            </div>
+                            <div class="field grow">
+                                <span class="flabel">Límite por página</span>
+                                <div class="qb-limit">
+                                    <input class="codeinput qb-num" id="q-limit" value="50" inputmode="numeric" onchange="App.onLimitInput()" onkeydown="if(event.key==='Enter'){event.preventDefault();App.runQuery();}">
+                                    <div class="qb-presets" id="limit-presets"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="qbar-foot">
+                        <div class="left" id="saved-chips"></div>
+                        <div style="display:flex; gap:14px; align-items:center;">
+                            <span class="toggle-link" onclick="App.toggleOpts()"><span id="opts-caret"><svg class="ic-svg" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5.5 15.5 12 9 18.5"/></svg></span> Opciones</span>
+                            <span class="toggle-link" onclick="App.saveQuery()">★ Guardar consulta</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="res-tools">
+                    <div class="seg" id="view-seg">
+                        <button data-view="list" class="on" onclick="App.setView('list')">Lista</button>
+                        <button data-view="table" onclick="App.setView('table')">Tabla</button>
+                    </div>
+                    <div class="spacer"></div>
+                    <div class="pager">
+                        <span class="range" id="pg-range">—</span>
+                        <button class="pg-btn" id="pg-prev" onclick="App.prevPage()" title="Anterior"><svg class="ic-svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5.5 8.5 12 15 18.5"/></svg></button>
+                        <button class="pg-btn" id="pg-next" onclick="App.nextPage()" title="Siguiente"><svg class="ic-svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5.5 15.5 12 9 18.5"/></svg></button>
+                    </div>
+                </div>
+                <div class="results" id="results"></div>
+            </div>
+        </main>
+    </div>
+    <aside class="activity" id="activity">
+        <div class="activity-head">
+            <h3><svg class="ic-svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg> Actividad</h3>
+            <div class="a-tools">
+                <button class="btn sm ghost" onclick="App.clearActivity()">Limpiar</button>
+                <button class="icon-btn" title="Cerrar" onclick="App.toggleActivity()"><svg class="ic-svg" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+            </div>
+        </div>
+        <div class="activity-list" id="activity-list"></div>
+    </aside>
+    <datalist id="field-list"></datalist>
+    <div class="menu" id="ctx-menu"></div>
+    <div class="overlay" id="overlay">
+        <div class="modal" id="modal">
+            <div class="modal-head">
+                <div>
+                    <h3 id="modal-title">—</h3>
+                    <div class="sub" id="modal-sub"></div>
+                </div>
+                <button class="x-btn" onclick="App.closeModal()">×</button>
+            </div>
+            <div class="modal-body" id="modal-body"></div>
+            <div class="modal-foot" id="modal-foot"></div>
+        </div>
+    </div>
+    <div class="toasts" id="toasts"></div>
+    <script>
+    /* =========================================================================
+       TRANSPORTE WEBSOCKET  —  protocolo idéntico al backend (NO modificar shape)
+       ========================================================================= */
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const PROD_DATABASE_WS_PORT = '3244';
+    function normalizeWebSocketUrl(rawValue) {
+        const value = String(rawValue || '').trim();
+        if (!value) return '';
+        if (value.startsWith('ws://') || value.startsWith('wss://')) return value;
+        if (value.startsWith('//')) return `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}${value}`;
+        try {
+            const url = new URL(value, window.location.origin);
+            if (url.protocol === 'http:') url.protocol = 'ws:';
+            else if (url.protocol === 'https:') url.protocol = 'wss:';
+            if (!url.pathname || url.pathname === '/') url.pathname = '/ws';
+            url.search = '';
+            url.hash = '';
+            return url.toString();
+        } catch {
+            return '';
+        }
+    }
+    function resolveWebSocketUrl() {
+        const params = new URLSearchParams(window.location.search);
+        const explicit = normalizeWebSocketUrl(
+            params.get('wsUrl')
+            || window.localStorage.getItem('microservicedb.database.wsUrl')
+            || document.querySelector('meta[name="microservicedb-database-ws-url"]')?.content
+            || window.MICROSERVICE_DATABASE_WS_URL
+        );
+        if (explicit) return explicit;
+        const isLocalHost = ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
+        if (!isLocalHost && window.location.protocol === 'https:' && (!window.location.port || window.location.port === '443')) {
+            return `wss://${window.location.hostname}:${PROD_DATABASE_WS_PORT}/ws`;
+        }
+        return `${wsProtocol}//${window.location.host}/ws`;
+    }
+    const wsUrl = resolveWebSocketUrl();
+    let ws = null;
+    const pendingQueue = [];
+    function safeJsonParse(s, fallback) { try { return JSON.parse(s); } catch { return fallback; } }
+    function isReservedDatabaseName(name) {
+        return typeof name === 'string' && ['admin', 'config', 'local'].includes(name);
+    }
+    function visibleDatabaseNames(list) {
+        return (Array.isArray(list) ? list : []).filter(name => typeof name === 'string' && !isReservedDatabaseName(name));
+    }
+    function isReservedCollectionName(name) {
+        return typeof name === 'string' && (name === '__mdb_placeholder_empty__' || name.startsWith('system.'));
+    }
+    function visibleCollectionNames(list) {
+        return (Array.isArray(list) ? list : []).filter(name => typeof name === 'string' && !isReservedCollectionName(name));
+    }
+    // #region debug-point A:report-helper
+    function debugReport(hypothesisId, location, msg, data) {
+        fetch(`${window.location.protocol}//${window.location.host}/event`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                sessionId: 'maximum-call-stack',
+                runId: 'pre-fix',
+                hypothesisId,
+                location,
+                msg,
+                data: data || {},
+                ts: Date.now()
+            })
+        }).catch(() => {});
+    }
+    // #endregion
+    // #region debug-point E:global-errors
+    window.addEventListener('error', (event) => {
+        debugReport('E', 'index.html:window-error', '[DEBUG] window error', {
+            message: event?.message || null,
+            filename: event?.filename || null,
+            lineno: event?.lineno || null,
+            colno: event?.colno || null,
+            stack: event?.error?.stack || null
+        });
+    });
+    window.addEventListener('unhandledrejection', (event) => {
+        debugReport('E', 'index.html:unhandledrejection', '[DEBUG] unhandled rejection', {
+            reason: event?.reason?.message || String(event?.reason || ''),
+            stack: event?.reason?.stack || null
+        });
+    });
+    // #endregion
+    function normalizeForSafeJson(value, depth, maxDepth, seen) {
+        if (value == null) return value;
+        const t = typeof value;
+        if (t === 'string' || t === 'number' || t === 'boolean') return value;
+        if (t === 'bigint') return value.toString();
+        if (t === 'undefined') return null;
+        if (t === 'function') return '[Function]';
+        if (depth >= maxDepth) return '[MaxDepth]';
+        if (t !== 'object') return String(value);
+        if (seen.has(value)) return '[Circular]';
+        seen.add(value);
+        if (Array.isArray(value)) {
+            const out = value.map(v => normalizeForSafeJson(v, depth + 1, maxDepth, seen));
+            seen.delete(value);
+            return out;
+        }
+        const out = {};
+        for (const k of Object.keys(value)) {
+            out[k] = normalizeForSafeJson(value[k], depth + 1, maxDepth, seen);
+        }
+        seen.delete(value);
+        return out;
+    }
+    function safeStringify(value, indent, maxDepth) {
+        try {
+            const normalized = normalizeForSafeJson(value, 0, typeof maxDepth === 'number' ? maxDepth : 32, new WeakSet());
+            const json = JSON.stringify(normalized, null, indent == null ? 2 : indent);
+            return json === undefined ? '' : json;
+        } catch {
+            return '"[Unserializable]"';
+        }
+    }
+    const RENDER_LIMITS = {
+        stringLength: 320,
+        tableStringLength: 180,
+        listDepth: 4,
+        tableDepth: 2,
+        maxArrayItems: 20,
+        maxObjectKeys: 40,
+    };
+    const TABLE_SORT_WEIGHT_FIELD = '__doc_weight_percent__';
+    function truncateDisplayString(value, maxLength) {
+        const s = String(value == null ? '' : value);
+        const limit = Math.max(16, Number(maxLength) || RENDER_LIMITS.stringLength);
+        if (s.length <= limit) return s;
+        return `${s.slice(0, limit)}... [${s.length - limit} chars more]`;
+    }
+    function summarizeForRender(value, options, depth, seen) {
+        const opts = options || {};
+        const maxDepth = typeof opts.maxDepth === 'number' ? opts.maxDepth : RENDER_LIMITS.listDepth;
+        const maxArrayItems = typeof opts.maxArrayItems === 'number' ? opts.maxArrayItems : RENDER_LIMITS.maxArrayItems;
+        const maxObjectKeys = typeof opts.maxObjectKeys === 'number' ? opts.maxObjectKeys : RENDER_LIMITS.maxObjectKeys;
+        const maxStringLength = typeof opts.maxStringLength === 'number' ? opts.maxStringLength : RENDER_LIMITS.stringLength;
+        const currentDepth = depth || 0;
+        const currentSeen = seen || new WeakSet();
+        if (value == null || typeof value === 'number' || typeof value === 'boolean') return value;
+        const mongoFormatted = formatMongoDisplayValue(value);
+        if (mongoFormatted) return truncateDisplayString(mongoFormatted, maxStringLength);
+        if (typeof value === 'string') return truncateDisplayString(value, maxStringLength);
+        if (typeof value !== 'object') return truncateDisplayString(value, maxStringLength);
+        if (currentSeen.has(value)) return '[Circular]';
+        if (currentDepth >= maxDepth) {
+            return Array.isArray(value)
+                ? `[Array(${value.length}) truncated]`
+                : `[Object truncated with ${Object.keys(value).length} keys]`;
+        }
+        currentSeen.add(value);
+        if (Array.isArray(value)) {
+            const out = value.slice(0, maxArrayItems).map(v => summarizeForRender(v, opts, currentDepth + 1, currentSeen));
+            if (value.length > maxArrayItems) out.push(`[... ${value.length - maxArrayItems} more items]`);
+            currentSeen.delete(value);
+            return out;
+        }
+        const keys = Object.keys(value);
+        const out = {};
+        for (const key of keys.slice(0, maxObjectKeys)) {
+            out[key] = summarizeForRender(value[key], opts, currentDepth + 1, currentSeen);
+        }
+        if (keys.length > maxObjectKeys) out.__truncated__ = `${keys.length - maxObjectKeys} more keys`;
+        currentSeen.delete(value);
+        return out;
+    }
+    function isMongoObjectIdLike(value) {
+        return !!value
+            && typeof value === 'object'
+            && !Array.isArray(value)
+            && Object.keys(value).length === 1
+            && typeof value.$oid === 'string';
+    }
+    function isMongoDateLike(value) {
+        return !!value
+            && typeof value === 'object'
+            && !Array.isArray(value)
+            && Object.keys(value).length === 1
+            && (typeof value.$date === 'string' || typeof value.$date === 'number');
+    }
+    function isMongoLongLike(value) {
+        return !!value
+            && typeof value === 'object'
+            && !Array.isArray(value)
+            && Object.keys(value).length === 1
+            && (typeof value.$numberLong === 'string' || typeof value.$numberLong === 'number');
+    }
+    function isMongoDecimalLike(value) {
+        return !!value
+            && typeof value === 'object'
+            && !Array.isArray(value)
+            && Object.keys(value).length === 1
+            && typeof value.$numberDecimal === 'string';
+    }
+    function isMongoIntLike(value) {
+        return !!value
+            && typeof value === 'object'
+            && !Array.isArray(value)
+            && Object.keys(value).length === 1
+            && (typeof value.$numberInt === 'string' || typeof value.$numberInt === 'number');
+    }
+    function isMongoDoubleLike(value) {
+        return !!value
+            && typeof value === 'object'
+            && !Array.isArray(value)
+            && Object.keys(value).length === 1
+            && (typeof value.$numberDouble === 'string' || typeof value.$numberDouble === 'number');
+    }
+    function isMongoBinaryLike(value) {
+        return !!value
+            && typeof value === 'object'
+            && !Array.isArray(value)
+            && value.$binary
+            && typeof value.$binary === 'object'
+            && typeof value.$binary.base64 === 'string'
+            && typeof value.$binary.subType === 'string';
+    }
+    function isMongoTimestampLike(value) {
+        return !!value
+            && typeof value === 'object'
+            && !Array.isArray(value)
+            && value.$timestamp
+            && typeof value.$timestamp === 'object'
+            && value.$timestamp.t !== undefined
+            && value.$timestamp.i !== undefined;
+    }
+    function isMongoRegexLike(value) {
+        return !!value
+            && typeof value === 'object'
+            && !Array.isArray(value)
+            && value.$regularExpression
+            && typeof value.$regularExpression === 'object'
+            && typeof value.$regularExpression.pattern === 'string';
+    }
+    function isMongoMinKeyLike(value) {
+        return !!value
+            && typeof value === 'object'
+            && !Array.isArray(value)
+            && Object.keys(value).length === 1
+            && value.$minKey === 1;
+    }
+    function isMongoMaxKeyLike(value) {
+        return !!value
+            && typeof value === 'object'
+            && !Array.isArray(value)
+            && Object.keys(value).length === 1
+            && value.$maxKey === 1;
+    }
+    function formatMongoDisplayValue(value) {
+        if (isMongoObjectIdLike(value)) return `ObjectId("${value.$oid}")`;
+        if (isMongoDateLike(value)) return `ISODate("${value.$date}")`;
+        if (isMongoLongLike(value)) return `NumberLong("${value.$numberLong}")`;
+        if (isMongoDecimalLike(value)) return `NumberDecimal("${value.$numberDecimal}")`;
+        if (isMongoIntLike(value)) return `NumberInt("${value.$numberInt}")`;
+        if (isMongoDoubleLike(value)) return `NumberDouble("${value.$numberDouble}")`;
+        if (isMongoBinaryLike(value)) return `BinData(${JSON.stringify(value.$binary.subType)}, "${value.$binary.base64}")`;
+        if (isMongoTimestampLike(value)) return `Timestamp(${value.$timestamp.t}, ${value.$timestamp.i})`;
+        if (isMongoRegexLike(value)) return `/${value.$regularExpression.pattern}/${value.$regularExpression.options || ''}`;
+        if (isMongoMinKeyLike(value)) return 'MinKey()';
+        if (isMongoMaxKeyLike(value)) return 'MaxKey()';
+        return null;
+    }
+    function replaceMongoExtendedJsonStrings(json) {
+        return json
+            .replace(/\{\s*"\$oid":\s*"([^"]+)"\s*\}/g, 'ObjectId("$1")')
+            .replace(/\{\s*"\$date":\s*"([^"]+)"\s*\}/g, 'ISODate("$1")')
+            .replace(/\{\s*"\$date":\s*(-?\d+)\s*\}/g, 'ISODate("$1")')
+            .replace(/\{\s*"\$numberLong":\s*"([^"]+)"\s*\}/g, 'NumberLong("$1")')
+            .replace(/\{\s*"\$numberLong":\s*(-?\d+)\s*\}/g, 'NumberLong("$1")')
+            .replace(/\{\s*"\$numberDecimal":\s*"([^"]+)"\s*\}/g, 'NumberDecimal("$1")')
+            .replace(/\{\s*"\$numberInt":\s*"([^"]+)"\s*\}/g, 'NumberInt("$1")')
+            .replace(/\{\s*"\$numberDouble":\s*"([^"]+)"\s*\}/g, 'NumberDouble("$1")')
+            .replace(/\{\s*"\$minKey":\s*1\s*\}/g, 'MinKey()')
+            .replace(/\{\s*"\$maxKey":\s*1\s*\}/g, 'MaxKey()')
+            .replace(/\{\s*"\$timestamp":\s*\{\s*"t":\s*(-?\d+)\s*,\s*"i":\s*(-?\d+)\s*\}\s*\}/g, 'Timestamp($1, $2)')
+            .replace(/\{\s*"\$regularExpression":\s*\{\s*"pattern":\s*"([^"]*)"\s*,\s*"options":\s*"([^"]*)"\s*\}\s*\}/g, '/$1/$2')
+            .replace(/\{\s*"\$binary":\s*\{\s*"base64":\s*"([^"]+)"\s*,\s*"subType":\s*"([^"]+)"\s*\}\s*\}/g, 'BinData("$2", "$1")');
+    }
+    function prettyJsonForDisplay(value, indent) {
+        const json = safeStringify(value, indent == null ? 2 : indent);
+        if (!json) return json;
+        return replaceMongoExtendedJsonStrings(json);
+    }
+    function prettyJsonForRender(value, indent, options) {
+        return prettyJsonForDisplay(summarizeForRender(value, options), indent);
+    }
+    function valueToDisplayString(value) {
+        if (value === undefined) return '';
+        if (value === null) return 'null';
+        const mongoFormatted = formatMongoDisplayValue(value);
+        if (mongoFormatted) return truncateDisplayString(mongoFormatted, RENDER_LIMITS.tableStringLength);
+        if (typeof value === 'string') return truncateDisplayString(value, RENDER_LIMITS.tableStringLength);
+        if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+        return prettyJsonForRender(value, 0, {
+            maxDepth: RENDER_LIMITS.tableDepth,
+            maxArrayItems: 8,
+            maxObjectKeys: 12,
+            maxStringLength: RENDER_LIMITS.tableStringLength,
+        });
+    }
+    function rejectAllPending(err) {
+        while (pendingQueue.length) {
+            const p = pendingQueue.shift();
+            if (p?.timeoutId) clearTimeout(p.timeoutId);
+            try { p.reject(err); } catch {}
+        }
+    }
+    function sendAndWait(msg) {
+        if (!ws || ws.readyState !== WebSocket.OPEN) return Promise.reject(new Error('WebSocket no conectado'));
+        return new Promise((resolve, reject) => {
+            const p = { resolve, reject, timeoutId: null };
+            pendingQueue.push(p);
+            p.timeoutId = setTimeout(() => {
+                const idx = pendingQueue.indexOf(p);
+                if (idx >= 0) pendingQueue.splice(idx, 1);
+                reject(new Error('Timeout esperando respuesta del servidor'));
+            }, 20000);
+            ws.send(JSON.stringify(msg));
+        });
+    }
+    // Cliente de colección con la misma firma pública que MicroserviceDBAPI espera.
+    function createDbClient(dbName) {
+        return {
+            sendAndWait,
+            find: (collectionName, filter, options) => {
+                const o = options || {};
+                return sendAndWait({
+                    type: 'action', category: 'collection', function_name: 'find',
+                    payload: {
+                        database_name: dbName, collectionName, filter: filter || {},
+                        ...(o.sort ? { sort: o.sort } : {}),
+                        ...(o.projection ? { projection: o.projection } : {}),
+                        ...(typeof o.limit === 'number' ? { limit: o.limit } : {}),
+                        ...(typeof o.skip === 'number' ? { skip: o.skip } : {}),
+                    }
+                });
+            },
+            insertOne: (collectionName, document) => sendAndWait({
+                type: 'action', category: 'collection', function_name: 'insertOne',
+                payload: { database_name: dbName, collectionName, document }
+            }),
+            deleteOne: (collectionName, filter) => sendAndWait({
+                type: 'action', category: 'collection', function_name: 'deleteOne',
+                payload: { database_name: dbName, collectionName, filter: filter || {} }
+            }),
+            replaceOne: (collectionName, filter, replacement, options) => sendAndWait({
+                type: 'action', category: 'collection', function_name: 'replaceOne',
+                payload: { database_name: dbName, collectionName, filter: filter || {}, replacement, options: options || { upsert: false } }
+            }),
+        };
+    }
+    function dbAction(function_name, payload) {
+        return sendAndWait({ type: 'action', category: 'database', function_name, payload });
+    }
+    // Acción de colección directa (no toca createDbClient, que debe conservar su firma).
+    function colAction(dbName, collectionName, function_name, extra) {
+        return sendAndWait({
+            type: 'action', category: 'collection', function_name,
+            payload: { database_name: dbName, collectionName, ...(extra || {}) }
+        });
+    }
+    function connect() {
+        ws = new WebSocket(wsUrl);
+        ws.onopen = () => {
+            document.getElementById('ws-dot').classList.add('on');
+            document.getElementById('ws-text').textContent = 'Conectado';
+            App.refresh();
+        };
+        ws.onmessage = (ev) => {
+            const resp = safeJsonParse(ev.data, null);
+            if (!resp) return;
+            // Eventos de cambio difundidos (feature 4): se distinguen por kind:"change".
+            if (resp.kind === 'change') { App.onChangeEvent(resp); return; }
+            if (!resp || typeof resp.success !== 'boolean') return;
+            const p = pendingQueue.shift();
+            if (!p) return;
+            clearTimeout(p.timeoutId);
+            if (resp.success) p.resolve(safeJsonParse(resp.response_json, null));
+            else p.reject(new Error(resp.message || 'Error'));
+        };
+        ws.onerror = (event) => {
+            console.error('[MongoDB Admin] WebSocket connection failed', { wsUrl, event });
+        };
+        ws.onclose = () => {
+            document.getElementById('ws-dot').classList.remove('on');
+            document.getElementById('ws-text').textContent = 'Reconectando…';
+            rejectAllPending(new Error('WebSocket desconectado'));
+            setTimeout(connect, 3000);
+        };
+    }
+    /* =========================================================================
+       UTILIDADES UI
+       ========================================================================= */
+    function escapeHtml(s) {
+        return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+    const ICON_PATHS = {
+        database: '<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/>',
+        collection: '<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M3 9.3h18M3 14.6h18"/>',
+        chevron: '<path d="M9 5.5 15.5 12 9 18.5"/>',
+        chevronLeft: '<path d="M15 5.5 8.5 12 15 18.5"/>',
+        dots: '<circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/>',
+        refresh: '<path d="M20.5 12a8.5 8.5 0 1 1-2.6-6.1"/><path d="M20.5 4.5V10h-5.5"/>',
+        plus: '<path d="M12 5v14M5 12h14"/>',
+        search: '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.2-4.2"/>',
+        edit: '<path d="M4 20.5 8.5 19 19 8.5a2.1 2.1 0 0 0-3-3L5.5 16 4 20.5Z"/><path d="M14 7.5l2.5 2.5"/>',
+        clone: '<rect x="8.5" y="8.5" width="11.5" height="11.5" rx="2.2"/><path d="M4 15.5V6a2 2 0 0 1 2-2h9.5"/>',
+        copy: '<rect x="8.5" y="2.5" width="7" height="3.5" rx="1.2"/><path d="M15.5 4.5H18a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-13a2 2 0 0 1 2-2h2.5"/>',
+        trash: '<path d="M3.5 6h17"/><path d="M8 6V4.2A1.2 1.2 0 0 1 9.2 3h5.6A1.2 1.2 0 0 1 16 4.2V6"/><path d="M18.5 6 17.6 19a2 2 0 0 1-2 1.9H8.4a2 2 0 0 1-2-1.9L5.5 6"/><path d="M10 10.5v6M14 10.5v6"/>',
+        download: '<path d="M12 3v12"/><path d="M7.5 10.5 12 15l4.5-4.5"/><path d="M5 20.5h14"/>',
+        upload: '<path d="M5 20.5h14"/><path d="M12 16V4"/><path d="M7.5 8.5 12 4l4.5 4.5"/>',
+        warning: '<path d="M10.3 4 2 18.2a2 2 0 0 0 1.7 3h16.6a2 2 0 0 0 1.7-3L13.7 4a2 2 0 0 0-3.4 0Z"/><path d="M12 9.5v4.5M12 17.6h.01"/>',
+        inbox: '<path d="M3.5 13h4.2l1.6 2.6h5.4l1.6-2.6h4.2"/><path d="M5.5 5h13l2.5 7.5V18a1.5 1.5 0 0 1-1.5 1.5H4.5A1.5 1.5 0 0 1 3 18v-5.5Z"/>',
+        sortAsc: '<path d="M6 15l6-6 6 6"/>',
+        sortDesc: '<path d="M6 9l6 6 6-6"/>',
+        filter: '<path d="M3 5h18l-7 8v6l-4-2v-4z"/>',
+    };
+    const ICON_FILLED = new Set(['dots']);
+    function svgIcon(name, size) {
+        const p = ICON_PATHS[name]; if (!p) return '';
+        const s = size || 16, filled = ICON_FILLED.has(name);
+        return `<svg class="ic-svg" viewBox="0 0 24 24" width="${s}" height="${s}" fill="${filled ? 'currentColor' : 'none'}" stroke="${filled ? 'none' : 'currentColor'}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
+    }
+    function highlightJson(value, indent) {
+        const json = prettyJsonForDisplay(value, indent == null ? 2 : indent);
+        if (json === undefined) return '';
+        return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false)\b|\bnull\b|-?\d+(?:\.\d+)?(?:[eE][+\-]?\d+)?)/g, (m) => {
+            let cls = 'jn';
+            if (/^"/.test(m)) {
+                if (/:$/.test(m)) cls = 'jk';
+                else cls = 'js';
+            } else if (/true|false/.test(m)) cls = 'jb';
+            else if (/null/.test(m)) cls = 'ju';
+            return '<span class="' + cls + '">' + escapeHtml(m) + '</span>';
+        });
+    }
+    function highlightJsonPreview(value, indent, options) {
+        const json = prettyJsonForRender(value, indent == null ? 2 : indent, options);
+        if (json === undefined) return '';
+        return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false)\b|\bnull\b|-?\d+(?:\.\d+)?(?:[eE][+\-]?\d+)?)/g, (m) => {
+            let cls = 'jn';
+            if (/^"/.test(m)) {
+                if (/:$/.test(m)) cls = 'jk';
+                else cls = 'js';
+            } else if (/true|false/.test(m)) cls = 'jb';
+            else if (/null/.test(m)) cls = 'ju';
+            return '<span class="' + cls + '">' + escapeHtml(m) + '</span>';
+        });
+    }
+    function idToString(id) {
+        if (id == null) return null;
+        const mongoFormatted = formatMongoDisplayValue(id);
+        if (mongoFormatted) return mongoFormatted;
+        return typeof id === 'string' || typeof id === 'number' ? String(id) : safeStringify(id, 0);
+    }
+    function previewLine(doc) {
+        const parts = [];
+        for (const k of Object.keys(doc)) {
+            if (k === '_id') continue;
+            let v = doc[k];
+            let s;
+            if (v === null) s = 'null';
+            else if (typeof v === 'object') s = Array.isArray(v) ? `[${v.length}]` : '{…}';
+            else if (typeof v === 'string') s = `"${v.length > 24 ? v.slice(0, 24) + '…' : v}"`;
+            else s = String(v);
+            parts.push(`${k}: ${s}`);
+            if (parts.length >= 6) break;
+        }
+        return parts.join('  ·  ');
+    }
+    function deepCloneJson(value) {
+        return safeJsonParse(safeStringify(value, 0), null);
+    }
+    function getByPath(doc, path) {
+        if (!path) return undefined;
+        const parts = String(path).split('.');
+        let cur = doc;
+        for (const part of parts) {
+            if (cur == null) return undefined;
+            if (Array.isArray(cur)) {
+                const idx = Number(part);
+                cur = Number.isInteger(idx) ? cur[idx] : undefined;
+            } else if (typeof cur === 'object') {
+                cur = cur[part];
+            } else {
+                return undefined;
+            }
+        }
+        return cur;
+    }
+    function isPlainObject(value) {
+        return !!value && typeof value === 'object' && !Array.isArray(value);
+    }
+    function valuesEqual(a, b) {
+        return safeStringify(a, 0) === safeStringify(b, 0);
+    }
+    function docIdString(doc) {
+        if (!doc || typeof doc !== 'object') return null;
+        const id = doc._id;
+        return id === undefined ? null : safeStringify(id, 0);
+    }
+    function compareValuesForSort(a, b) {
+        if (a == null && b == null) return 0;
+        if (a == null) return -1;
+        if (b == null) return 1;
+        if (typeof a === 'number' && typeof b === 'number') return a === b ? 0 : (a < b ? -1 : 1);
+        if (typeof a === 'boolean' && typeof b === 'boolean') return a === b ? 0 : (a ? 1 : -1);
+        const sa = valueToDisplayString(a).toLowerCase();
+        const sb = valueToDisplayString(b).toLowerCase();
+        return sa.localeCompare(sb, undefined, { numeric: true, sensitivity: 'base' });
+    }
+    function matchesFieldCondition(value, descriptor) {
+        if (!descriptor) return true;
+        const op = descriptor.op || '=';
+        const raw = descriptor.value;
+        if (op === 'exists') return value !== undefined;
+        if (op === 'not_exists') return value === undefined;
+        if (op === 'empty') {
+            if (value === undefined || value === null) return true;
+            if (typeof value === 'string') return value.trim() === '';
+            if (Array.isArray(value)) return value.length === 0;
+            if (isPlainObject(value)) return Object.keys(value).length === 0;
+            return false;
+        }
+        if (op === 'not_empty') {
+            if (value === undefined || value === null) return false;
+            if (typeof value === 'string') return value.trim() !== '';
+            if (Array.isArray(value)) return value.length > 0;
+            if (isPlainObject(value)) return Object.keys(value).length > 0;
+            return true;
+        }
+        if (op === 'contains') return valueToDisplayString(value).toLowerCase().includes(String(raw || '').toLowerCase());
+        if (op === '=') return valuesEqual(value, raw);
+        if (op === '!=') return !valuesEqual(value, raw);
+        const cmp = compareValuesForSort(value, raw);
+        if (op === '>') return cmp > 0;
+        if (op === '>=') return cmp >= 0;
+        if (op === '<') return cmp < 0;
+        if (op === '<=') return cmp <= 0;
+        return true;
+    }
+    function matchesMongoLikeFilter(doc, filter) {
+        if (!isPlainObject(filter) || !Object.keys(filter).length) return true;
+        return Object.entries(filter).every(([key, expected]) => {
+            if (key === '$and') return Array.isArray(expected) && expected.every(item => matchesMongoLikeFilter(doc, item));
+            if (key === '$or') return Array.isArray(expected) && expected.some(item => matchesMongoLikeFilter(doc, item));
+            const actual = getByPath(doc, key);
+            if (isPlainObject(expected)) {
+                return Object.entries(expected).every(([op, value]) => {
+                    if (op === '$gt') return compareValuesForSort(actual, value) > 0;
+                    if (op === '$gte') return compareValuesForSort(actual, value) >= 0;
+                    if (op === '$lt') return compareValuesForSort(actual, value) < 0;
+                    if (op === '$lte') return compareValuesForSort(actual, value) <= 0;
+                    if (op === '$ne') return !valuesEqual(actual, value);
+                    if (op === '$exists') return value ? actual !== undefined : actual === undefined;
+                    if (op === '$in') return Array.isArray(value) && value.some(item => valuesEqual(actual, item));
+                    if (op === '$regex') {
+                        const pattern = String(value || '');
+                        const flags = pattern.startsWith('(?i)') ? 'i' : '';
+                        const source = pattern.replace(/^\(\?i\)/, '');
+                        try { return new RegExp(source, flags).test(valueToDisplayString(actual)); } catch { return false; }
+                    }
+                    return valuesEqual(actual, expected);
+                });
+            }
+            return valuesEqual(actual, expected);
+        });
+    }
+    function applyProjectionToDoc(doc, projection) {
+        if (!doc || typeof doc !== 'object' || !isPlainObject(projection) || !Object.keys(projection).length) return doc;
+        const includeKeys = Object.entries(projection).filter(([, v]) => v === 1).map(([k]) => k);
+        const excludeKeys = Object.entries(projection).filter(([, v]) => v === 0).map(([k]) => k);
+        if (includeKeys.length) {
+            const out = {};
+            includeKeys.forEach(key => {
+                const value = getByPath(doc, key);
+                if (value !== undefined) out[key] = deepCloneJson(value);
+            });
+            if (projection._id !== 0 && doc._id !== undefined) out._id = deepCloneJson(doc._id);
+            return out;
+        }
+        if (!excludeKeys.length) return doc;
+        const out = deepCloneJson(doc) || {};
+        excludeKeys.forEach(key => { if (key in out) delete out[key]; });
+        return out;
+    }
+    function byteLengthOfJson(value) {
+        const json = safeStringify(value, 0);
+        try { return new TextEncoder().encode(json).length; }
+        catch { return json.length; }
+    }
+    function formatBytes(bytes) {
+        const value = Math.max(0, Number(bytes) || 0);
+        if (value < 1024) return `${value} B`;
+        if (value < 1024 * 1024) return `${(value / 1024).toFixed(value < 10 * 1024 ? 1 : 0)} KB`;
+        return `${(value / (1024 * 1024)).toFixed(2)} MB`;
+    }
+    function toast(msg, kind) {
+        const wrap = document.getElementById('toasts');
+        const el = document.createElement('div');
+        el.className = 'toast' + (kind ? ' ' + kind : '');
+        el.textContent = msg;
+        wrap.appendChild(el);
+        setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity .3s'; setTimeout(() => el.remove(), 300); }, kind === 'err' ? 4200 : 2600);
+    }
+    /* =========================================================================
+       MENÚ CONTEXTUAL FLOTANTE
+       ========================================================================= */
+    const Menu = {
+        el: null,
+        open(x, y, items) {
+            if (!this.el) this.el = document.getElementById('ctx-menu');
+            const el = this.el;
+            el.innerHTML = '';
+            items.forEach(it => {
+                if (it.sep) { const s = document.createElement('div'); s.className = 'menu-sep'; el.appendChild(s); return; }
+                const b = document.createElement('button');
+                b.className = 'menu-item' + (it.danger ? ' danger' : '');
+                b.innerHTML = `<span class="mi-ic">${it.icon ? svgIcon(it.icon, 15) : ''}</span><span>${escapeHtml(it.label)}</span>`;
+                b.onclick = async (e) => { e.stopPropagation(); this.close(); try { await it.onClick(); } catch (err) { toast(err.message, 'err'); } };
+                el.appendChild(b);
+            });
+            el.classList.add('open');
+            requestAnimationFrame(() => {
+                const r = el.getBoundingClientRect();
+                let nx = x, ny = y;
+                if (nx + r.width > window.innerWidth - 8) nx = window.innerWidth - r.width - 8;
+                if (ny + r.height > window.innerHeight - 8) ny = Math.max(8, y - r.height);
+                el.style.left = Math.max(8, nx) + 'px';
+                el.style.top = Math.max(8, ny) + 'px';
+            });
+        },
+        close() { if (this.el) this.el.classList.remove('open'); }
+    };
+    document.addEventListener('click', () => Menu.close());
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { Menu.close(); App.closeModal(); } });
+    window.addEventListener('resize', () => Menu.close());
+    /* =========================================================================
+       APP
+       ========================================================================= */
+    const App = {
+        dbs: [],
+        colsByDb: new Map(),
+        loadingByDb: new Map(),
+        errorByDb: new Map(),
+        openDbs: new Set(),
+        sel: { db: null, col: null },
+        client: null,
+        view: 'list',
+        page: { skip: 0, limit: 50, hasNext: false, count: 0 },
+        lastDocs: [],
+        lastQuery: null,
+        tableState: { filters: {}, sort: null, page: 0, filteredCount: 0 },
+        // Estado del constructor de consultas (features 2 y 3)
+        qb: {
+            filterMode: 'advanced',          // 'simple' | 'advanced'
+            match: 'AND',                    // combinador del asistente
+            conditions: [],                  // [{ field, op, value }]
+            project: { mode: 'none', fields: [], includeId: true },
+            sort: [],                        // [{ field, dir: 1|-1 }]
+        },
+        // Actividad / eventos de cambio (feature 4)
+        activity: [],
+        activityOpen: false,
+        unseen: 0,
+        _actSeq: 0,
+        sidebarCollapsed: false,
+        LIMIT_PRESETS: [50],
+        TABLE_PAGE_SIZE: 50,
+        TREE_PAGE_SIZE: 50,
+        TREE_COL_PAGE_SIZE: 100,
+        ACTIVITY_PAGE_SIZE: 20,
+        treePage: 0,
+        activityPage: 0,
+        colPageByDb: new Map(),
+        paginate(items, page, pageSize) {
+            const list = Array.isArray(items) ? items : [];
+            const size = Math.max(1, pageSize || 1);
+            const total = list.length;
+            const maxPage = Math.max(0, Math.ceil(total / size) - 1);
+            const current = Math.min(Math.max(0, page || 0), maxPage);
+            const start = current * size;
+            const end = Math.min(total, start + size);
+            return {
+                items: list.slice(start, end),
+                page: current,
+                total,
+                pageSize: size,
+                totalPages: maxPage + 1,
+                start,
+                end
+            };
+        },
+        resetTableState(clearFilters) {
+            if (clearFilters) {
+                this.tableState.filters = {};
+                this.tableState.sort = null;
+            }
+            this.tableState.page = 0;
+            this.tableState.filteredCount = 0;
+        },
+        setTablePage(page) {
+            this.tableState.page = Math.max(0, page || 0);
+            this.renderResults();
+        },
+        normalizeNumericInput(inputId, fallback, min) {
+            const input = document.getElementById(inputId);
+            const floor = Number.isFinite(min) ? min : 0;
+            const base = Number.isFinite(fallback) ? Math.max(floor, Math.trunc(fallback)) : floor;
+            if (!input) return base;
+            const raw = String(input.value || '').trim();
+            const parsed = Number.parseInt(raw, 10);
+            const normalized = Number.isFinite(parsed) ? Math.max(floor, parsed) : base;
+            input.value = String(normalized);
+            return normalized;
+        },
+        normalizeQuerySkipInput() {
+            return this.normalizeNumericInput('q-skip', this.page.skip || 0, 0);
+        },
+        normalizeQueryLimitInput() {
+            return this.normalizeNumericInput('q-limit', this.page.limit || 50, 1);
+        },
+        getTableFilterKeys() {
+            return Object.keys(this.tableState.filters || {});
+        },
+        getTableSortMap() {
+            if (!this.tableState.sort || !this.tableState.sort.field) return {};
+            return { [this.tableState.sort.field]: this.tableState.sort.dir };
+        },
+        getRenderedDocs() {
+            if (this.normalizeView(this.view) !== 'table') return this.getListSortedDocsByWeight(this.lastDocs);
+            return this.applyTableTransforms(this.lastDocs).items;
+        },
+        getListSortedDocsByWeight(sourceDocs) {
+            const docs = Array.isArray(sourceDocs) ? sourceDocs.slice() : [];
+            const sizeContext = this.getDocSizeContext(docs);
+            docs.sort((a, b) => this.getDocSizeInfo(b, sizeContext).bytes - this.getDocSizeInfo(a, sizeContext).bytes);
+            return docs;
+        },
+        getDocSizeContext(sourceDocs) {
+            const docs = Array.isArray(sourceDocs) ? sourceDocs : [];
+            const sizes = new Map();
+            let totalBytes = 0;
+            docs.forEach(doc => {
+                const key = docIdString(doc) || safeStringify(doc, 0);
+                const bytes = byteLengthOfJson(doc);
+                sizes.set(key, bytes);
+                totalBytes += bytes;
+            });
+            return { sizes, totalBytes };
+        },
+        getDocSizeInfo(doc, context) {
+            const key = docIdString(doc) || safeStringify(doc, 0);
+            const bytes = context?.sizes?.get(key) ?? byteLengthOfJson(doc);
+            const total = Math.max(0, context?.totalBytes || 0);
+            const percent = total > 0 ? (bytes / total) * 100 : 0;
+            return {
+                bytes,
+                total,
+                percent,
+                label: `${formatBytes(bytes)} · ${percent.toFixed(percent >= 10 ? 0 : 1)}%`,
+                title: `Tamaño aprox.: ${formatBytes(bytes)} (${bytes} bytes). Participación aprox. dentro de la colección cargada: ${percent.toFixed(2)}%`
+            };
+        },
+        getRowCellWeightContext(doc, cols) {
+            const weights = new Map();
+            let maxBytes = 0;
+            (Array.isArray(cols) ? cols : []).forEach(col => {
+                const bytes = byteLengthOfJson(getByPath(doc, col));
+                weights.set(col, bytes);
+                if (bytes > maxBytes) maxBytes = bytes;
+            });
+            return { weights, maxBytes };
+        },
+        getWeightedCellStyle(bytes, maxBytes) {
+            if (!maxBytes || maxBytes <= 0) {
+                return {
+                    backgroundColor: 'rgb(215,215,215)',
+                    color: '#111827'
+                };
+            }
+            const ratio = Math.max(0, Math.min(1, bytes / maxBytes));
+            const shade = Math.round(225 - (ratio * 185));
+            return {
+                backgroundColor: `rgb(${shade}, ${shade}, ${shade})`,
+                color: ratio >= 0.58 ? '#ffffff' : '#111827'
+            };
+        },
+        getTableSortValue(doc, field, sizeContext) {
+            if (field === TABLE_SORT_WEIGHT_FIELD) {
+                return this.getDocSizeInfo(doc, sizeContext).percent;
+            }
+            return getByPath(doc, field);
+        },
+        applyTableTransforms(docs) {
+            let rows = Array.isArray(docs) ? docs.slice() : [];
+            const sizeContext = this.getDocSizeContext(docs);
+            const filters = this.tableState.filters || {};
+            const filterEntries = Object.entries(filters);
+            if (filterEntries.length) {
+                rows = rows.filter(doc => filterEntries.every(([field, descriptor]) => matchesFieldCondition(getByPath(doc, field), descriptor)));
+            }
+            const sort = this.tableState.sort;
+            if (sort && sort.field && sort.dir) {
+                rows.sort((a, b) => compareValuesForSort(
+                    this.getTableSortValue(a, sort.field, sizeContext),
+                    this.getTableSortValue(b, sort.field, sizeContext)
+                ) * (sort.dir < 0 ? -1 : 1));
+            }
+            this.tableState.filteredCount = rows.length;
+            const page = this.paginate(rows, this.tableState.page, this.TABLE_PAGE_SIZE);
+            this.tableState.page = page.page;
+            return page;
+        },
+        refreshVisibleDocsFromState() {
+            this.refreshFieldList();
+            this.renderResults();
+            this.updatePager();
+        },
+        buildMiniPager(meta, onPageChange, compact) {
+            if (!meta || meta.totalPages <= 1) return null;
+            const wrap = document.createElement('div');
+            wrap.className = 'mini-pager' + (compact ? ' compact' : '');
+            const prev = document.createElement('button');
+            prev.className = 'btn sm';
+            prev.textContent = 'Prev';
+            prev.disabled = meta.page <= 0;
+            prev.onclick = () => onPageChange(meta.page - 1);
+            const info = document.createElement('div');
+            info.className = 'mini-pager-info';
+            info.textContent = `${meta.start + 1}-${meta.end} / ${meta.total}`;
+            const next = document.createElement('button');
+            next.className = 'btn sm';
+            next.textContent = 'Next';
+            next.disabled = meta.page >= meta.totalPages - 1;
+            next.onclick = () => onPageChange(meta.page + 1);
+            wrap.append(prev, info, next);
+            return wrap;
+        },
+        onTreeFilterInput() {
+            this.treePage = 0;
+            this.colPageByDb.clear();
+            this.renderTree();
+        },
+        setTreePage(page) {
+            this.treePage = Math.max(0, page || 0);
+            this.renderTree();
+        },
+        setColPage(db, page) {
+            this.colPageByDb.set(db, Math.max(0, page || 0));
+            this.renderTree();
+        },
+        setActivityPage(page) {
+            this.activityPage = Math.max(0, page || 0);
+            this.renderActivity();
+        },
+        /* ---------- árbol ---------- */
+        async refresh() {
+            try {
+                const dbs = await sendAndWait({ type: 'list_databases' });
+                this.dbs = visibleDatabaseNames(dbs);
+                for (const k of Array.from(this.colsByDb.keys())) if (!this.dbs.includes(k)) this.colsByDb.delete(k);
+                for (const k of Array.from(this.openDbs)) if (!this.dbs.includes(k)) this.openDbs.delete(k);
+                if (this.sel.db && !this.dbs.includes(this.sel.db)) this.closeWorkspace();
+                for (const db of this.openDbs) if (!this.colsByDb.has(db) && !this.loadingByDb.has(db)) this.ensureCols(db);
+                this.renderTree();
+            } catch (e) { toast('No se pudieron cargar las bases de datos: ' + e.message, 'err'); }
+        },
+        ensureCols(db) {
+            if (this.colsByDb.has(db)) return Promise.resolve(this.colsByDb.get(db));
+            if (this.loadingByDb.has(db)) return this.loadingByDb.get(db);
+            this.errorByDb.delete(db);
+            const p = (async () => {
+                const cols = await sendAndWait({ type: 'list_collections', database_name: db });
+                const list = visibleCollectionNames(cols);
+                this.colsByDb.set(db, list);
+                return list;
+            })();
+            this.loadingByDb.set(db, p);
+            p.catch(e => { this.errorByDb.set(db, e.message || 'Error'); this.colsByDb.set(db, []); })
+             .finally(() => { this.loadingByDb.delete(db); this.renderTree(); });
+            return p;
+        },
+        renderTree() {
+            // #region debug-point A:renderTree-enter
+            window.__dbgMcs = window.__dbgMcs || { treeDepth: 0, activityDepth: 0, seq: 0 };
+            const dbgTreeSeq = ++window.__dbgMcs.seq;
+            window.__dbgMcs.treeDepth += 1;
+            debugReport('A', 'index.html:renderTree:enter', '[DEBUG] renderTree enter', {
+                seq: dbgTreeSeq,
+                depth: window.__dbgMcs.treeDepth,
+                treePage: this.treePage,
+                openDbs: this.openDbs.size,
+                dbCount: this.dbs.length,
+                cachedDbCount: this.colsByDb.size
+            });
+            // #endregion
+            try {
+            const root = document.getElementById('tree');
+            const flt = (document.getElementById('tree-filter').value || '').toLowerCase();
+            root.innerHTML = '';
+            const filteredDbs = this.dbs.filter(d => !flt || d.toLowerCase().includes(flt) || (this.colsByDb.get(d) || []).some(c => c.toLowerCase().includes(flt)));
+            const dbPage = this.paginate(filteredDbs, this.treePage, this.TREE_PAGE_SIZE);
+            this.treePage = dbPage.page;
+            if (!dbPage.total) {
+                root.innerHTML = `<div class="tree-hint">${this.dbs.length ? 'Sin coincidencias' : 'No hay bases de datos'}</div>`;
+                return;
+            }
+            dbPage.items.forEach(db => {
+                const node = document.createElement('div'); node.className = 'node';
+                const row = document.createElement('div');
+                row.className = 'row db' + (this.sel.db === db && !this.sel.col ? ' active' : '');
+                const isOpen = this.openDbs.has(db);
+                const cols = this.colsByDb.get(db);
+                const tw = document.createElement('span'); tw.className = 'twist' + (isOpen ? ' open' : '');
+                tw.innerHTML = svgIcon('chevron', 12);
+                tw.onclick = (e) => { e.stopPropagation(); this.toggleDb(db); };
+                const ico = document.createElement('span'); ico.className = 'row-ico'; ico.innerHTML = svgIcon('database', 15);
+                const lbl = document.createElement('span'); lbl.className = 'row-label'; lbl.textContent = db;
+                const cnt = document.createElement('span'); cnt.className = 'count';
+                cnt.textContent = cols ? cols.length : '';
+                const kb = document.createElement('button'); kb.className = 'kebab'; kb.innerHTML = svgIcon('dots', 16);
+                kb.onclick = (e) => { e.stopPropagation(); this.dbMenu(db, e); };
+                row.append(tw, ico, lbl, cnt, kb);
+                row.onclick = () => { this.toggleDb(db, true); };
+                node.appendChild(row);
+                const ch = document.createElement('div'); ch.className = 'children' + (isOpen ? ' open' : '');
+                if (isOpen) {
+                    if (!cols) {
+                        if (this.errorByDb.get(db)) {
+                            const h = document.createElement('div'); h.className = 'tree-hint';
+                            h.innerHTML = `Error <span class="tree-retry">Reintentar</span>`;
+                            h.querySelector('.tree-retry').onclick = (e) => { e.stopPropagation(); this.colsByDb.delete(db); this.errorByDb.delete(db); this.ensureCols(db); this.renderTree(); };
+                            ch.appendChild(h);
+                        } else {
+                            const h = document.createElement('div'); h.className = 'tree-hint'; h.textContent = 'Cargando…'; ch.appendChild(h);
+                        }
+                    } else if (!cols.length) {
+                        const h = document.createElement('div'); h.className = 'tree-hint'; h.textContent = 'Sin colecciones'; ch.appendChild(h);
+                    } else {
+                        const filteredCols = cols.filter(c => !flt || db.toLowerCase().includes(flt) || c.toLowerCase().includes(flt));
+                        const colPage = this.paginate(filteredCols, this.colPageByDb.get(db) || 0, this.TREE_COL_PAGE_SIZE);
+                        this.colPageByDb.set(db, colPage.page);
+                        colPage.items.forEach(col => {
+                            const cr = document.createElement('div');
+                            cr.className = 'row' + (this.sel.db === db && this.sel.col === col ? ' active' : '');
+                            const t2 = document.createElement('span'); t2.className = 'twist leaf';
+                            const i2 = document.createElement('span'); i2.className = 'row-ico'; i2.innerHTML = svgIcon('collection', 15);
+                            const l2 = document.createElement('span'); l2.className = 'row-label'; l2.textContent = col;
+                            const k2 = document.createElement('button'); k2.className = 'kebab'; k2.innerHTML = svgIcon('dots', 16);
+                            k2.onclick = (e) => { e.stopPropagation(); this.colMenu(db, col, e); };
+                            cr.append(t2, i2, l2, k2);
+                            cr.onclick = () => this.openCollection(db, col);
+                            ch.appendChild(cr);
+                        });
+                        const colPager = this.buildMiniPager(colPage, (page) => this.setColPage(db, page), true);
+                        if (colPager) ch.appendChild(colPager);
+                    }
+                }
+                node.appendChild(ch);
+                root.appendChild(node);
+            });
+            const dbPager = this.buildMiniPager(dbPage, (page) => this.setTreePage(page), false);
+            if (dbPager) root.appendChild(dbPager);
+            } finally {
+                // #region debug-point A:renderTree-exit
+                debugReport('A', 'index.html:renderTree:exit', '[DEBUG] renderTree exit', {
+                    seq: dbgTreeSeq,
+                    depth: window.__dbgMcs.treeDepth,
+                    treePage: this.treePage
+                });
+                window.__dbgMcs.treeDepth = Math.max(0, window.__dbgMcs.treeDepth - 1);
+                // #endregion
+            }
+        },
+        toggleDb(db, alsoSelect) {
+            // #region debug-point B:toggleDb
+            debugReport('B', 'index.html:toggleDb', '[DEBUG] toggleDb', {
+                db,
+                alsoSelect: !!alsoSelect,
+                wasOpen: this.openDbs.has(db),
+                treePage: this.treePage
+            });
+            // #endregion
+            if (this.openDbs.has(db)) { if (!alsoSelect) this.openDbs.delete(db); }
+            else { this.openDbs.add(db); this.ensureCols(db); }
+            if (alsoSelect) { this.openDbs.add(db); this.ensureCols(db); }
+            this.renderTree();
+        },
+        /* ---------- panel lateral (feature 1) ---------- */
+        toggleSidebar() {
+            const isMobile = window.innerWidth <= 920;
+            if (isMobile) {
+                document.getElementById('sidebar').classList.toggle('show');
+            } else {
+                this.sidebarCollapsed = !this.sidebarCollapsed;
+                document.getElementById('shell').classList.toggle('nav-collapsed', this.sidebarCollapsed);
+            }
+        },
+        /* ---------- menús contextuales (todas las modificaciones viven aquí) ---------- */
+        dbMenu(db, ev) {
+            const r = ev.currentTarget.getBoundingClientRect();
+            Menu.open(r.left, r.bottom + 4, [
+                { icon: 'plus', label: 'Crear colección', onClick: () => this.newCollection(db) },
+                { sep: true },
+                { icon: 'download', label: 'Exportar base de datos', onClick: () => this.exportDatabase(db) },
+                { icon: 'upload', label: 'Importar a esta base…', onClick: () => this.importCollectionPrompt(db, null) },
+                { sep: true },
+                { icon: 'edit', label: 'Renombrar base de datos', onClick: () => this.renameDatabase(db) },
+                { icon: 'trash', label: 'Eliminar base de datos', danger: true, onClick: () => this.deleteDatabase(db) },
+            ]);
+        },
+        colMenu(db, col, ev) {
+            if (isReservedCollectionName(col)) return;
+            const r = ev.currentTarget.getBoundingClientRect();
+            Menu.open(r.left, r.bottom + 4, [
+                { icon: 'refresh', label: 'Abrir / refrescar', onClick: () => this.openCollection(db, col) },
+                { icon: 'plus', label: 'Insertar documento', onClick: () => { this.openCollection(db, col); setTimeout(() => this.insertDocument(), 50); } },
+                { sep: true },
+                { icon: 'download', label: 'Exportar colección', onClick: () => this.exportCollection(db, col) },
+                { icon: 'upload', label: 'Importar a colección…', onClick: () => this.importCollectionPrompt(db, col) },
+                { icon: 'download', label: 'Exportar resultados (JSON)', onClick: () => { if (this.sel.db === db && this.sel.col === col) this.exportJson(); else { this.openCollection(db, col); toast('Ejecuta una búsqueda y exporta desde la barra', 'ok'); } } },
+                { sep: true },
+                { icon: 'edit', label: 'Renombrar colección', onClick: () => this.renameCollection(db, col) },
+                { icon: 'trash', label: 'Eliminar colección', danger: true, onClick: () => this.deleteCollection(db, col) },
+            ]);
+        },
+        colHeadMenu(ev) {
+            const r = ev.currentTarget.getBoundingClientRect();
+            const { db, col } = this.sel;
+            if (isReservedCollectionName(col)) return;
+            Menu.open(r.right - 220, r.bottom + 4, [
+                { icon: 'refresh', label: 'Refrescar', onClick: () => this.runQuery() },
+                { icon: 'download', label: 'Exportar colección', onClick: () => this.exportCollection(db, col) },
+                { icon: 'upload', label: 'Importar a colección…', onClick: () => this.importCollectionPrompt(db, col) },
+                { icon: 'download', label: 'Exportar resultados (JSON)', onClick: () => this.exportJson() },
+                { sep: true },
+                { icon: 'edit', label: 'Renombrar colección', onClick: () => this.renameCollection(db, col) },
+                { icon: 'trash', label: 'Eliminar colección', danger: true, onClick: () => this.deleteCollection(db, col) },
+            ]);
+        },
+        /* ---------- operaciones de DB / colección ---------- */
+        newDatabase() {
+            this.prompt('Nueva base de datos', 'MongoDB validará el nombre al crearla', '', async (name) => {
+                await dbAction('createDatabase', { database_name: name });
+                this.openDbs.add(name);
+                await this.refresh();
+                toast('Base de datos creada', 'ok');
+            });
+        },
+        renameDatabase(db) {
+            this.prompt('Renombrar base de datos', 'Nuevo nombre', db, async (name) => {
+                if (name === db) return;
+                await dbAction('renameDatabase', { database_name: db, new_database_name: name });
+                this.colsByDb.delete(db);
+                if (this.openDbs.delete(db)) this.openDbs.add(name);
+                if (this.sel.db === db) { this.sel.db = name; if (this.sel.col) this.openCollection(name, this.sel.col); else this.closeWorkspace(); }
+                await this.refresh();
+                toast('Base de datos renombrada', 'ok');
+            });
+        },
+        deleteDatabase(db) {
+            this.confirm('Eliminar base de datos', `Se eliminará "${db}" de MongoDB. Esta acción no se puede deshacer.`, async () => {
+                await dbAction('deleteDatabase', { database_name: db });
+                this.colsByDb.delete(db); this.openDbs.delete(db);
+                if (this.sel.db === db) this.closeWorkspace();
+                await this.refresh();
+                toast('Base de datos eliminada', 'ok');
+            });
+        },
+        newCollection(db) {
+            this.prompt('Nueva colección', `En "${db}" · MongoDB validará el nombre`, '', async (name) => {
+                if (isReservedCollectionName(name)) return toast('Reserved collections cannot be created from the UI', 'err');
+                await dbAction('createCollection', { database_name: db, collectionName: name });
+                this.colsByDb.delete(db); this.openDbs.add(db);
+                await this.refresh();
+                this.openCollection(db, name);
+                toast('Colección creada', 'ok');
+            });
+        },
+        renameCollection(db, col) {
+            this.prompt('Renombrar colección', 'Nuevo nombre', col, async (name) => {
+                if (name === col) return;
+                if (isReservedCollectionName(col) || isReservedCollectionName(name)) return toast('Reserved collections cannot be renamed from the UI', 'err');
+                await dbAction('renameCollection', { database_name: db, collectionName: col, new_collection_name: name });
+                this.colsByDb.delete(db);
+                await this.refresh();
+                if (this.sel.db === db && this.sel.col === col) this.openCollection(db, name);
+                toast('Colección renombrada', 'ok');
+            });
+        },
+        deleteCollection(db, col) {
+            this.confirm('Eliminar colección', `Se eliminará la colección "${col}" de "${db}". Esta acción no se puede deshacer.`, async () => {
+                await dbAction('deleteCollection', { database_name: db, collectionName: col });
+                this.colsByDb.delete(db);
+                if (this.sel.db === db && this.sel.col === col) this.closeWorkspace();
+                await this.refresh();
+                toast('Colección eliminada', 'ok');
+            });
+        },
+        /* ---------- workspace ---------- */
+        openCollection(db, col) {
+            if (isReservedCollectionName(col)) {
+                toast('Reserved collections are hidden from the workspace', 'err');
+                return;
+            }
+            // #region debug-point C:openCollection
+            debugReport('C', 'index.html:openCollection', '[DEBUG] openCollection', {
+                db,
+                col,
+                view: this.view,
+                skip: this.page.skip,
+                limit: this.page.limit
+            });
+            // #endregion
+            this.sel = { db, col };
+            this.client = createDbClient(db);
+            this.page = { skip: 0, limit: 50, hasNext: false, count: 0 };
+            this.lastQuery = null;
+            this.lastDocs = [];
+            this.resetTableState(true);
+            document.getElementById('empty').style.display = 'none';
+            document.getElementById('workspace').style.display = 'flex';
+            document.getElementById('crumb-db').textContent = db;
+            document.getElementById('crumb-col').textContent = col;
+            document.getElementById('q-skip').value = '0';
+            document.getElementById('q-limit').value = '50';
+            document.getElementById('sidebar').classList.remove('show');
+            this.renderTree();
+            this.renderSavedChips();
+            this.renderLimitPresets();
+            this.renderProjectBuilder();
+            this.renderSortBuilder();
+            if (this.qb.filterMode === 'simple') this.renderFilterBuilder();
+            this.runQuery();
+        },
+        closeWorkspace() {
+            this.sel = { db: null, col: null }; this.client = null;
+            this.lastDocs = [];
+            this.lastQuery = null;
+            this.resetTableState(true);
+            document.getElementById('workspace').style.display = 'none';
+            document.getElementById('empty').style.display = 'flex';
+            this.renderTree();
+        },
+        /* ---------- conocimiento de campos (para autocompletado) ---------- */
+        knownFields() {
+            const set = new Set();
+            (this.lastDocs || []).forEach(d => { if (d && typeof d === 'object') Object.keys(d).forEach(k => set.add(k)); });
+            return Array.from(set);
+        },
+        refreshFieldList() {
+            const dl = document.getElementById('field-list');
+            if (!dl) return;
+            dl.innerHTML = '';
+            this.knownFields().forEach(f => { const o = document.createElement('option'); o.value = f; dl.appendChild(o); });
+        },
+        /* ---------- query: opciones / presets ---------- */
+        toggleOpts() {
+            const o = document.getElementById('qopts');
+            o.classList.toggle('open');
+            document.getElementById('opts-caret').classList.toggle('open', o.classList.contains('open'));
+        },
+        validateField(el) {
+            const v = el.value.trim();
+            if (!v) { el.classList.remove('invalid'); return true; }
+            const parsed = safeJsonParse(v, undefined);
+            const ok = parsed !== undefined && typeof parsed === 'object';
+            el.classList.toggle('invalid', !ok);
+            return ok;
+        },
+        onSkipInput() { this.normalizeQuerySkipInput(); },
+        onLimitInput() { this.normalizeQueryLimitInput(); this.renderLimitPresets(); },
+        renderLimitPresets() {
+            const wrap = document.getElementById('limit-presets');
+            if (!wrap) return;
+            const cur = parseInt(document.getElementById('q-limit').value) || 25;
+            wrap.innerHTML = '';
+            this.LIMIT_PRESETS.forEach(n => {
+                const c = document.createElement('span'); c.className = 'chip preset' + (n === cur ? ' on' : '');
+                c.textContent = n;
+                c.onclick = () => { document.getElementById('q-limit').value = n; this.onLimitInput(); };
+                wrap.appendChild(c);
+            });
+        },
+        /* ---------- constructor de FILTRO (feature 3) ---------- */
+        escapeRegex(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); },
+        parseValue(s) {
+            if (typeof s !== 'string') return s;
+            const t = s.trim();
+            if (t === '') return '';
+            const parsed = safeJsonParse(t, undefined);
+            return parsed === undefined ? s : parsed;
+        },
+        setFilterMode(m) {
+            if (m === 'advanced') {
+                if (this.qb.filterMode === 'simple') {
+                    document.getElementById('q-filter').value = JSON.stringify(this.buildFilterFromConditions());
+                }
+            } else { // simple
+                const parsed = safeJsonParse((document.getElementById('q-filter').value || '{}').trim() || '{}', undefined);
+                const c = this.conditionsFromFilter(parsed);
+                if (c === null) {
+                    toast('La consulta avanzada es demasiado compleja para el asistente; permanece en modo Avanzado', 'err');
+                    m = 'advanced';
+                } else { this.qb.conditions = c.conditions; this.qb.match = c.match; }
+            }
+            this.qb.filterMode = m;
+            document.querySelectorAll('#filter-mode-seg button').forEach(b => b.classList.toggle('on', b.dataset.fm === m));
+            document.getElementById('filter-simple').style.display = m === 'simple' ? 'block' : 'none';
+            document.getElementById('q-filter').style.display = m === 'advanced' ? 'block' : 'none';
+            if (m === 'simple') this.renderFilterBuilder();
+        },
+        renderFilterBuilder() {
+            const root = document.getElementById('filter-simple');
+            if (!root) return;
+            root.innerHTML = '';
+            const head = document.createElement('div'); head.className = 'qb-row qb-match';
+            const lbl = document.createElement('span'); lbl.className = 'qb-mini-label'; lbl.textContent = 'Coincidir con';
+            const seg = document.createElement('div'); seg.className = 'seg seg-mini';
+            [['AND', 'TODAS'], ['OR', 'ALGUNA']].forEach(([v, t]) => {
+                const b = document.createElement('button'); b.textContent = t; if (this.qb.match === v) b.className = 'on';
+                b.onclick = () => { this.qb.match = v; this.renderFilterBuilder(); this.runQuery(); };
+                seg.appendChild(b);
+            });
+            const lbl2 = document.createElement('span'); lbl2.className = 'qb-mini-label'; lbl2.textContent = 'las condiciones';
+            head.append(lbl, seg, lbl2);
+            root.appendChild(head);
+            this.qb.conditions.forEach((c, i) => root.appendChild(this.conditionRow(c, i)));
+            const add = document.createElement('button'); add.className = 'btn sm qb-add'; add.innerHTML = svgIcon('plus', 13) + ' Agregar condición';
+            add.onclick = () => { this.qb.conditions.push({ field: '', op: '=', value: '' }); this.renderFilterBuilder(); };
+            root.appendChild(add);
+        },
+        conditionRow(c, i) {
+            const row = document.createElement('div'); row.className = 'qb-row';
+            const field = document.createElement('input'); field.className = 'codeinput qb-field'; field.placeholder = 'campo'; field.value = c.field; field.setAttribute('list', 'field-list');
+            field.oninput = () => { c.field = field.value; };
+            field.onchange = () => this.runQuery();
+            const op = document.createElement('select'); op.className = 'qb-op';
+            const OPS = [['=', 'igual a'], ['≠', 'distinto de'], ['>', 'mayor que'], ['≥', 'mayor o igual'], ['<', 'menor que'], ['≤', 'menor o igual'], ['contiene', 'contiene'], ['en', 'en lista'], ['existe', 'existe'], ['no existe', 'no existe']];
+            OPS.forEach(([v, t]) => { const o = document.createElement('option'); o.value = v; o.textContent = t; if (c.op === v) o.selected = true; op.appendChild(o); });
+            op.onchange = () => { c.op = op.value; this.renderFilterBuilder(); this.runQuery(); };
+            const val = document.createElement('input'); val.className = 'codeinput qb-val'; val.placeholder = 'valor'; val.value = c.value;
+            const noVal = (c.op === 'existe' || c.op === 'no existe');
+            if (noVal) { val.disabled = true; val.placeholder = '—'; }
+            val.oninput = () => { c.value = val.value; };
+            val.onchange = () => this.runQuery();
+            val.onkeydown = (e) => { if (e.key === 'Enter') this.runQuery(); };
+            const del = document.createElement('button'); del.className = 'da del qb-del'; del.title = 'Quitar'; del.innerHTML = svgIcon('trash', 14);
+            del.onclick = () => { this.qb.conditions.splice(i, 1); this.renderFilterBuilder(); this.runQuery(); };
+            row.append(field, op, val, del);
+            return row;
+        },
+        clauseFor(c) {
+            const v = this.parseValue(c.value);
+            switch (c.op) {
+                case '=': return { [c.field]: v };
+                case '≠': return { [c.field]: { $ne: v } };
+                case '>': return { [c.field]: { $gt: v } };
+                case '≥': return { [c.field]: { $gte: v } };
+                case '<': return { [c.field]: { $lt: v } };
+                case '≤': return { [c.field]: { $lte: v } };
+                case 'contiene': return { [c.field]: { $regex: '(?i)' + this.escapeRegex(String(c.value)) } };
+                case 'en': return { [c.field]: { $in: String(c.value).split(',').map(s => this.parseValue(s.trim())).filter(x => x !== '') } };
+                case 'existe': return { [c.field]: { $exists: true } };
+                case 'no existe': return { [c.field]: { $exists: false } };
+                default: return { [c.field]: v };
+            }
+        },
+        buildFilterFromConditions() {
+            const conds = this.qb.conditions.filter(c => c.field && (c.op === 'existe' || c.op === 'no existe' || c.value !== ''));
+            if (!conds.length) return {};
+            const clauses = conds.map(c => this.clauseFor(c));
+            if (this.qb.match === 'OR') return { $or: clauses };
+            const fields = clauses.map(cl => Object.keys(cl)[0]);
+            const unique = new Set(fields).size === fields.length;
+            if (unique) { const o = {}; clauses.forEach(cl => Object.assign(o, cl)); return o; }
+            return { $and: clauses };
+        },
+        conditionsFromFilter(parsed) {
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+            const keys = Object.keys(parsed);
+            if (keys.length === 0) return { conditions: [], match: 'AND' };
+            if (keys.length === 1 && (keys[0] === '$or' || keys[0] === '$and')) {
+                const match = keys[0] === '$or' ? 'OR' : 'AND';
+                const arr = parsed[keys[0]];
+                if (!Array.isArray(arr)) return null;
+                const conds = [];
+                for (const cl of arr) { const c = this.condFromClause(cl); if (!c) return null; conds.push(c); }
+                return { conditions: conds, match };
+            }
+            if (keys.some(k => k.startsWith('$'))) return null;
+            const conds = [];
+            for (const k of keys) { const c = this.condFromClause({ [k]: parsed[k] }); if (!c) return null; conds.push(c); }
+            return { conditions: conds, match: 'AND' };
+        },
+        condFromClause(cl) {
+            if (!cl || typeof cl !== 'object' || Array.isArray(cl)) return null;
+            const ks = Object.keys(cl); if (ks.length !== 1) return null;
+            const field = ks[0]; if (field.startsWith('$')) return null;
+            const v = cl[field];
+            const ser = (x) => typeof x === 'string' ? x : JSON.stringify(x);
+            if (v && typeof v === 'object' && !Array.isArray(v)) {
+                const ops = Object.keys(v); if (ops.length !== 1) return null;
+                const op = ops[0]; const ov = v[op];
+                switch (op) {
+                    case '$ne': return { field, op: '≠', value: ser(ov) };
+                    case '$gt': return { field, op: '>', value: ser(ov) };
+                    case '$gte': return { field, op: '≥', value: ser(ov) };
+                    case '$lt': return { field, op: '<', value: ser(ov) };
+                    case '$lte': return { field, op: '≤', value: ser(ov) };
+                    case '$in': return { field, op: 'en', value: Array.isArray(ov) ? ov.map(ser).join(', ') : ser(ov) };
+                    case '$exists': return { field, op: ov ? 'existe' : 'no existe', value: '' };
+                    case '$regex': { let p = String(ov); p = p.replace(/^\(\?i\)/, ''); return { field, op: 'contiene', value: p.replace(/\\(.)/g, '$1') }; }
+                    default: return null;
+                }
+            }
+            return { field, op: '=', value: ser(v) };
+        },
+        /* ---------- constructor de PROYECCIÓN (feature 2) ---------- */
+        setProjectMode(m, silent) {
+            this.qb.project.mode = m;
+            document.querySelectorAll('#proj-mode-seg button').forEach(b => b.classList.toggle('on', b.dataset.pm === m));
+            this.renderProjectBuilder();
+            if (!silent) this.runQuery();
+        },
+        renderProjectBuilder() {
+            const root = document.getElementById('proj-builder');
+            if (!root) return;
+            root.innerHTML = '';
+            const p = this.qb.project;
+            if (p.mode === 'none') { root.innerHTML = '<span class="qb-hint">Se muestran todos los campos del documento.</span>'; return; }
+            p.fields.forEach((f, i) => {
+                const row = document.createElement('div'); row.className = 'qb-row';
+                const inp = document.createElement('input'); inp.className = 'codeinput qb-field'; inp.placeholder = 'campo'; inp.value = f; inp.setAttribute('list', 'field-list');
+                inp.oninput = () => { p.fields[i] = inp.value; };
+                inp.onchange = () => this.runQuery();
+                const del = document.createElement('button'); del.className = 'da del qb-del'; del.title = 'Quitar'; del.innerHTML = svgIcon('trash', 14);
+                del.onclick = () => { p.fields.splice(i, 1); this.renderProjectBuilder(); this.runQuery(); };
+                row.append(inp, del); root.appendChild(row);
+            });
+            const add = document.createElement('button'); add.className = 'btn sm qb-add'; add.innerHTML = svgIcon('plus', 13) + ' Agregar campo';
+            add.onclick = () => { p.fields.push(''); this.renderProjectBuilder(); };
+            root.appendChild(add);
+            // Toggle _id solo es válido en modo "ocultar" (este backend no permite
+            // mezclar inclusión de campos con exclusión de _id).
+            if (p.mode === 'exclude') {
+                const idRow = document.createElement('label'); idRow.className = 'qb-row';
+                const cb = document.createElement('input'); cb.type = 'checkbox'; cb.style.accentColor = 'var(--accent)'; cb.checked = !p.includeId;
+                cb.onchange = () => { p.includeId = !cb.checked; this.runQuery(); };
+                const t = document.createElement('span'); t.className = 'qb-mini-label'; t.textContent = 'Ocultar también _id';
+                idRow.append(cb, t); root.appendChild(idRow);
+            } else {
+                const h = document.createElement('span'); h.className = 'qb-hint'; h.textContent = '_id siempre se incluye en este modo.';
+                root.appendChild(h);
+            }
+        },
+        buildProjection() {
+            const p = this.qb.project;
+            if (p.mode === 'none') return undefined;
+            const obj = {};
+            const fields = p.fields.map(f => (f || '').trim()).filter(Boolean);
+            if (p.mode === 'include') {
+                fields.forEach(f => { obj[f] = 1; });
+                if (Object.keys(obj).length === 0) return undefined;
+            } else {
+                fields.forEach(f => { obj[f] = 0; });
+                if (!p.includeId) obj._id = 0;
+                if (Object.keys(obj).length === 0) return undefined;
+            }
+            return obj;
+        },
+        /* ---------- constructor de ORDEN (feature 2) ---------- */
+        renderSortBuilder() {
+            const root = document.getElementById('sort-builder');
+            if (!root) return;
+            root.innerHTML = '';
+            if (!this.qb.sort.length) {
+                const h = document.createElement('span'); h.className = 'qb-hint'; h.textContent = 'Sin orden específico.';
+                root.appendChild(h);
+            }
+            this.qb.sort.forEach((s, i) => {
+                const row = document.createElement('div'); row.className = 'qb-row';
+                const inp = document.createElement('input'); inp.className = 'codeinput qb-field'; inp.placeholder = 'campo'; inp.value = s.field; inp.setAttribute('list', 'field-list');
+                inp.oninput = () => { s.field = inp.value; };
+                inp.onchange = () => this.runQuery();
+                const dir = document.createElement('select'); dir.className = 'qb-op';
+                [['1', 'Ascendente ↑'], ['-1', 'Descendente ↓']].forEach(([v, t]) => { const o = document.createElement('option'); o.value = v; o.textContent = t; if (String(s.dir) === v) o.selected = true; dir.appendChild(o); });
+                dir.onchange = () => { s.dir = parseInt(dir.value); this.runQuery(); };
+                const del = document.createElement('button'); del.className = 'da del qb-del'; del.title = 'Quitar'; del.innerHTML = svgIcon('trash', 14);
+                del.onclick = () => { this.qb.sort.splice(i, 1); this.renderSortBuilder(); this.runQuery(); };
+                row.append(inp, dir, del); root.appendChild(row);
+            });
+            const add = document.createElement('button'); add.className = 'btn sm qb-add'; add.innerHTML = svgIcon('plus', 13) + ' Agregar criterio';
+            add.onclick = () => { this.qb.sort.push({ field: '', dir: 1 }); this.renderSortBuilder(); };
+            root.appendChild(add);
+        },
+        buildSort() {
+            const obj = {};
+            this.qb.sort.forEach(s => { const f = (s.field || '').trim(); if (f) obj[f] = s.dir < 0 ? -1 : 1; });
+            return obj;
+        },
+        /* ---------- lectura / ejecución de la consulta ---------- */
+        readQuery() {
+            let filter;
+            if (this.qb.filterMode === 'advanced') {
+                const el = document.getElementById('q-filter');
+                filter = safeJsonParse((el.value || '').trim() || '{}', undefined);
+                if (filter === undefined || typeof filter !== 'object') { el.classList.add('invalid'); throw new Error('Filtro avanzado no es JSON válido'); }
+                el.classList.remove('invalid');
+            } else {
+                filter = this.buildFilterFromConditions();
+                document.getElementById('q-filter').value = JSON.stringify(filter); // reflejo para transparencia
+            }
+            const sort = this.buildSort();
+            const projection = this.buildProjection();
+            const limit = this.normalizeQueryLimitInput();
+            const skip = this.normalizeQuerySkipInput();
+            return { filter, sort, projection, limit, skip };
+        },
+        async runQuery() {
+            if (!this.client) return;
+            let q;
+            try { q = this.readQuery(); } catch (e) { return toast(e.message, 'err'); }
+            // #region debug-point C:runQuery
+            debugReport('C', 'index.html:runQuery', '[DEBUG] runQuery', {
+                db: this.sel.db,
+                col: this.sel.col,
+                view: this.view,
+                skip: q.skip,
+                limit: q.limit,
+                filterKeys: q.filter && typeof q.filter === 'object' ? Object.keys(q.filter).slice(0, 10) : [],
+                sortKeys: q.sort ? Object.keys(q.sort) : []
+            });
+            // #endregion
+            this.page.limit = q.limit; this.page.skip = q.skip;
+            this.lastQuery = deepCloneJson(q);
+            this.tableState.page = 0;
+            const results = document.getElementById('results');
+            results.innerHTML = `<div class="loading-state"><div class="spinner"></div><span>Consultando…</span></div>`;
+            try {
+                const docs = await this.client.find(this.sel.col, q.filter, {
+                    sort: Object.keys(q.sort).length ? q.sort : undefined,
+                    projection: q.projection,
+                    limit: q.limit + 1, skip: q.skip
+                });
+                const arr = Array.isArray(docs) ? docs : [];
+                this.page.hasNext = arr.length > q.limit;
+                this.lastDocs = arr.slice(0, q.limit);
+                this.page.count = this.lastDocs.length;
+                this.refreshVisibleDocsFromState();
+            } catch (e) {
+                results.innerHTML = `<div class="res-empty"><span style="color:var(--danger);opacity:.7;">${svgIcon('warning', 30)}</span><span>${escapeHtml(e.message)}</span></div>`;
+            }
+        },
+        resetQuery() {
+            this.qb.conditions = []; this.qb.match = 'AND';
+            this.qb.sort = []; this.qb.project = { mode: 'none', fields: [], includeId: true };
+            document.getElementById('q-filter').value = '{}';
+            document.getElementById('q-filter').classList.remove('invalid');
+            document.getElementById('q-skip').value = '0';
+            document.getElementById('q-limit').value = '50';
+            this.renderLimitPresets();
+            this.setProjectMode('none', true);
+            this.renderSortBuilder();
+            if (this.qb.filterMode === 'simple') this.renderFilterBuilder();
+            this.runQuery();
+        },
+        prevPage() {
+            if (this.normalizeView(this.view) === 'table') {
+                this.setTablePage(this.tableState.page - 1);
+                return;
+            }
+            const sk = Math.max(0, this.page.skip - this.page.limit);
+            document.getElementById('q-skip').value = sk;
+            this.runQuery();
+        },
+        nextPage() {
+            if (this.normalizeView(this.view) === 'table') {
+                this.setTablePage(this.tableState.page + 1);
+                return;
+            }
+            if (!this.page.hasNext) return;
+            document.getElementById('q-skip').value = this.page.skip + this.page.limit;
+            this.runQuery();
+        },
+        updatePager() {
+            if (this.normalizeView(this.view) === 'table' && this.lastDocs.length) {
+                const tablePage = this.applyTableTransforms(this.lastDocs);
+                const from = tablePage.total ? tablePage.start + 1 : 0;
+                const to = tablePage.end;
+                document.getElementById('pg-range').textContent = tablePage.total ? `${from}–${to}` : '0';
+                document.getElementById('pg-prev').disabled = tablePage.page <= 0;
+                document.getElementById('pg-next').disabled = tablePage.page >= tablePage.totalPages - 1;
+                document.getElementById('col-meta').textContent = `${tablePage.total} fila${tablePage.total === 1 ? '' : 's'} en tabla`;
+                return;
+            }
+            const from = this.page.count ? this.page.skip + 1 : 0;
+            const to = this.page.skip + this.page.count;
+            document.getElementById('pg-range').textContent = this.page.count ? `${from}–${to}` : '0';
+            document.getElementById('pg-prev').disabled = this.page.skip <= 0;
+            document.getElementById('pg-next').disabled = !this.page.hasNext;
+            document.getElementById('col-meta').textContent = `${this.page.count} doc${this.page.count === 1 ? '' : 's'}${this.page.hasNext ? '+' : ''}`;
+        },
+        /* ---------- vistas ---------- */
+        normalizeView(v) {
+            return v === 'table' ? 'table' : 'list';
+        },
+        setView(v) {
+            this.view = this.normalizeView(v);
+            document.querySelectorAll('#view-seg button').forEach(b => b.classList.toggle('on', b.dataset.view === this.view));
+            this.renderResults();
+        },
+        renderResults() {
+            const results = document.getElementById('results');
+            const docs = this.getRenderedDocs();
+            if (!docs.length) {
+                const msg = this.normalizeView(this.view) === 'table' && this.lastDocs.length
+                    ? 'Sin resultados para este filtro local de tabla'
+                    : 'Sin resultados para este filtro';
+                results.innerHTML = `<div class="res-empty"><span style="opacity:.5;">${svgIcon('inbox', 30)}</span><span>${msg}</span></div>`;
+                return;
+            }
+            if (this.normalizeView(this.view) === 'table') this.renderTable(results, this.lastDocs);
+            else this.renderList(results, docs);
+        },
+        renderList(root, docs) {
+            root.innerHTML = '';
+            const sizeContext = this.getDocSizeContext(this.lastDocs);
+            docs.forEach((doc, i) => {
+                const card = document.createElement('div'); card.className = 'doc';
+                const idStr = idToString(doc._id);
+                const sizeInfo = this.getDocSizeInfo(doc, sizeContext);
+                const previewDoc = summarizeForRender(doc, {
+                    maxDepth: RENDER_LIMITS.listDepth,
+                    maxArrayItems: 12,
+                    maxObjectKeys: 24,
+                    maxStringLength: RENDER_LIMITS.stringLength,
+                });
+                const top = document.createElement('div'); top.className = 'doc-top';
+                const tw = document.createElement('button'); tw.className = 'doc-twist'; tw.innerHTML = svgIcon('chevron', 12);
+                const prev = document.createElement('span'); prev.className = 'doc-preview'; prev.textContent = previewLine(doc);
+                const metric = document.createElement('span'); metric.className = 'doc-metric'; metric.textContent = sizeInfo.label; metric.title = sizeInfo.title;
+                const acts = document.createElement('div'); acts.className = 'doc-acts';
+                acts.appendChild(this.actBtn('edit', 'Editar', () => this.editDocument(doc)));
+                acts.appendChild(this.actBtn('clone', 'Clonar (insertar como nuevo)', () => this.cloneDocument(doc)));
+                acts.appendChild(this.actBtn('copy', 'Copiar JSON al portapapeles', () => this.copyDoc(doc), false));
+                acts.appendChild(this.actBtn('trash', 'Eliminar', () => this.deleteDocument(doc), true));
+                if (idStr != null) {
+                    const idEl = document.createElement('span'); idEl.className = 'doc-id';
+                    idEl.innerHTML = `<span class="k">_id:</span> <b>${escapeHtml(idStr)}</b>`;
+                    top.append(tw, idEl, prev, metric, acts);
+                } else {
+                    top.append(tw, prev, metric, acts);
+                }
+                const body = document.createElement('div'); body.className = 'doc-body';
+                body.innerHTML = `<pre class="json">${highlightJsonPreview(previewDoc, 2, {
+                    maxDepth: RENDER_LIMITS.listDepth,
+                    maxArrayItems: 12,
+                    maxObjectKeys: 24,
+                    maxStringLength: RENDER_LIMITS.stringLength,
+                })}</pre>`;
+                const toggle = () => { const open = body.classList.toggle('open'); tw.classList.toggle('open', open); };
+                tw.onclick = (e) => { e.stopPropagation(); toggle(); };
+                top.onclick = (e) => { if (e.target.closest('.doc-acts')) return; toggle(); };
+                card.append(top, body);
+                root.appendChild(card);
+            });
+        },
+        actBtn(icon, title, fn, danger) {
+            const b = document.createElement('button');
+            b.className = 'da' + (danger ? ' del' : '');
+            b.title = title; b.innerHTML = svgIcon(icon, 15);
+            b.onclick = (e) => { e.stopPropagation(); fn(); };
+            return b;
+        },
+        /* ---------- tabla con filtro/orden tipo Excel (feature 5) ---------- */
+        renderTable(root, docs) {
+            const tablePage = this.applyTableTransforms(docs);
+            const visibleDocs = tablePage.items;
+            if (!visibleDocs.length) {
+                root.innerHTML = `<div class="res-empty"><span style="opacity:.5;">${svgIcon('inbox', 30)}</span><span>Sin resultados para este filtro local de tabla</span></div>`;
+                return;
+            }
+            const sizeContext = this.getDocSizeContext(this.lastDocs);
+            const cols = [];
+            if (visibleDocs.some(d => d._id !== undefined)) cols.push('_id');
+            visibleDocs.forEach(d => Object.keys(d).forEach(k => { if (k !== '_id' && !cols.includes(k)) cols.push(k); }));
+            const filteredKeys = this.getTableFilterKeys();
+            const sortMap = this.getTableSortMap();
+            const wrap = document.createElement('div'); wrap.className = 'tablewrap';
+            const table = document.createElement('table');
+            const thead = document.createElement('thead');
+            const htr = document.createElement('tr');
+            cols.forEach(c => {
+                const th = document.createElement('th');
+                if (filteredKeys.includes(c)) th.classList.add('col-filtered');
+                const inner = document.createElement('div'); inner.className = 'th-inner';
+                const label = document.createElement('span'); label.className = 'th-label';
+                const txt = document.createElement('span'); txt.textContent = c;
+                label.appendChild(txt);
+                if (sortMap[c] !== undefined) {
+                    const si = document.createElement('span'); si.className = 'th-sort';
+                    si.innerHTML = svgIcon(sortMap[c] < 0 ? 'sortDesc' : 'sortAsc', 13);
+                    label.appendChild(si);
+                }
+                label.title = 'Clic para ordenar por ' + c;
+                label.onclick = () => this.cycleColumnSort(c);
+                const mbtn = document.createElement('button'); mbtn.className = 'th-menu'; mbtn.title = 'Filtrar / ordenar';
+                mbtn.innerHTML = svgIcon('filter', 13);
+                mbtn.onclick = (e) => { e.stopPropagation(); this.columnMenu(c, e); };
+                inner.append(label, mbtn);
+                th.appendChild(inner);
+                htr.appendChild(th);
+            });
+            const actTh = document.createElement('th'); actTh.className = 'plain'; actTh.style.textAlign = 'right';
+            const actInner = document.createElement('div'); actInner.className = 'th-inner';
+            actInner.style.justifyContent = 'flex-end';
+            const actLabel = document.createElement('span'); actLabel.className = 'th-label';
+            actLabel.title = 'Clic para ordenar por peso del documento en la colección cargada';
+            actLabel.onclick = () => this.cycleColumnSort(TABLE_SORT_WEIGHT_FIELD);
+            const actTxt = document.createElement('span'); actTxt.textContent = 'Acciones';
+            actLabel.appendChild(actTxt);
+            if (sortMap[TABLE_SORT_WEIGHT_FIELD] !== undefined) {
+                const actSi = document.createElement('span'); actSi.className = 'th-sort';
+                actSi.innerHTML = svgIcon(sortMap[TABLE_SORT_WEIGHT_FIELD] < 0 ? 'sortDesc' : 'sortAsc', 13);
+                actLabel.appendChild(actSi);
+            }
+            actInner.appendChild(actLabel);
+            actTh.appendChild(actInner);
+            htr.appendChild(actTh);
+            thead.appendChild(htr);
+            const tbody = document.createElement('tbody');
+            visibleDocs.forEach(doc => {
+                const sizeInfo = this.getDocSizeInfo(doc, sizeContext);
+                const rowWeight = this.getRowCellWeightContext(doc, cols);
+                const tr = document.createElement('tr');
+                cols.forEach(c => {
+                    const td = document.createElement('td');
+                    if (c === '_id') td.className = 'col-id';
+                    const v = doc[c];
+                    const s = valueToDisplayString(v);
+                    const cellBytes = rowWeight.weights.get(c) || 0;
+                    const style = this.getWeightedCellStyle(cellBytes, rowWeight.maxBytes);
+                    td.classList.add('cell-weighted');
+                    td.style.backgroundColor = style.backgroundColor;
+                    td.style.color = style.color;
+                    td.textContent = s;
+                    td.title = `${s}\nPeso de la celda: ${formatBytes(cellBytes)} (${cellBytes} bytes)`;
+                    tr.appendChild(td);
+                });
+                const actTd = document.createElement('td'); actTd.className = 'acts-cell'; actTd.style.textAlign = 'right';
+                const ra = document.createElement('div'); ra.className = 'rowacts'; ra.style.justifyContent = 'flex-end';
+                const metric = document.createElement('span'); metric.className = 'row-metric'; metric.textContent = sizeInfo.label; metric.title = sizeInfo.title;
+                ra.appendChild(metric);
+                ra.appendChild(this.actBtn('edit', 'Editar', () => this.editDocument(doc)));
+                ra.appendChild(this.actBtn('clone', 'Clonar (insertar como nuevo)', () => this.cloneDocument(doc)));
+                ra.appendChild(this.actBtn('trash', 'Eliminar', () => this.deleteDocument(doc), true));
+                actTd.appendChild(ra); tr.appendChild(actTd);
+                tbody.appendChild(tr);
+            });
+            table.append(thead, tbody); wrap.appendChild(table);
+            root.innerHTML = '';
+            root.appendChild(wrap);
+            const pager = this.buildMiniPager(tablePage, (page) => this.setTablePage(page), false);
+            if (pager) root.appendChild(pager);
+        },
+        cycleColumnSort(col) {
+            const cur = this.tableState.sort && this.tableState.sort.field === col ? this.tableState.sort : null;
+            let dir;
+            if (!cur) dir = 1; else if (cur.dir === 1) dir = -1; else dir = 0;
+            this.tableState.sort = dir === 0 ? null : { field: col, dir };
+            this.tableState.page = 0;
+            this.renderResults();
+        },
+        columnMenu(col, ev) {
+            const r = ev.currentTarget.getBoundingClientRect();
+            Menu.open(r.left, r.bottom + 4, [
+                { icon: 'sortAsc', label: 'Ordenar ascendente', onClick: () => this.setColumnSort(col, 1) },
+                { icon: 'sortDesc', label: 'Ordenar descendente', onClick: () => this.setColumnSort(col, -1) },
+                { icon: 'refresh', label: 'Quitar orden de columna', onClick: () => this.setColumnSort(col, 0) },
+                { sep: true },
+                { icon: 'filter', label: 'Filtrar: igual a…', onClick: () => this.promptColumnFilter(col, '=') },
+                { icon: 'filter', label: 'Filtrar: contiene…', onClick: () => this.promptColumnFilter(col, 'contains') },
+                { icon: 'filter', label: 'Filtrar: mayor que…', onClick: () => this.promptColumnFilter(col, '>') },
+                { icon: 'filter', label: 'Filtrar: menor que…', onClick: () => this.promptColumnFilter(col, '<') },
+                { icon: 'filter', label: 'Filtrar: está vacío', onClick: () => this.setColumnFilter(col, 'empty') },
+                { icon: 'filter', label: 'Filtrar: no está vacío', onClick: () => this.setColumnFilter(col, 'not_empty') },
+                { sep: true },
+                { icon: 'trash', label: 'Quitar filtro de columna', danger: true, onClick: () => this.removeColumnFilter(col) },
+            ]);
+        },
+        setColumnSort(col, dir) {
+            this.tableState.sort = dir === 0 ? null : { field: col, dir };
+            this.tableState.page = 0;
+            this.renderResults();
+        },
+        promptColumnFilter(col, op) {
+            const labels = { '=': 'igual a', 'contains': 'contiene', '>': 'mayor que', '<': 'menor que' };
+            this.prompt(`Filtrar "${col}"`, `Valor (${labels[op]})`, '', (raw) => {
+                this.setColumnFilter(col, op, raw);
+            });
+        },
+        setColumnFilter(col, op, raw) {
+            const descriptor = { op, value: raw === undefined ? undefined : this.parseValue(raw), raw };
+            this.tableState.filters[col] = descriptor;
+            this.tableState.page = 0;
+            this.renderResults();
+        },
+        removeColumnFilter(col) {
+            if (this.tableState.filters && this.tableState.filters[col]) {
+                delete this.tableState.filters[col];
+                this.tableState.page = 0;
+                this.renderResults();
+            } else {
+                toast('La columna no tiene un filtro simple que quitar', 'err');
+            }
+        },
+        /* ---------- documentos: CRUD ---------- */
+        insertDocument() {
+            if (!this.client) return;
+            this.openEditor('Insertar documento', `${this.sel.db} › ${this.sel.col}`, '{\n  \n}', async (obj) => {
+                const result = await this.client.insertOne(this.sel.col, obj);
+                const nextDoc = deepCloneJson(obj);
+                if (nextDoc && typeof nextDoc === 'object' && !Array.isArray(nextDoc) &&
+                    typeof nextDoc._id === 'undefined' && result && Object.prototype.hasOwnProperty.call(result, 'insertedId')) {
+                    nextDoc._id = deepCloneJson(result.insertedId);
+                }
+                if (nextDoc && typeof nextDoc === 'object' && !Array.isArray(nextDoc) && typeof nextDoc._id !== 'undefined') {
+                    this.replaceOrInsertVisibleDoc(nextDoc);
+                    this.refreshVisibleDocsFromState();
+                } else {
+                    this.runQuery();
+                }
+                toast('Documento insertado', 'ok');
+            });
+        },
+        editDocument(doc) {
+            const id = doc._id;
+            if (typeof id === 'undefined') return toast('El documento no tiene _id, no se puede reemplazar', 'err');
+            this.openEditor('Editar documento', `_id: ${idToString(id)}`, safeStringify(doc, 2), async (obj) => {
+                obj._id = id;
+                await this.client.replaceOne(this.sel.col, { _id: id }, obj, { upsert: false });
+                this.replaceOrInsertVisibleDoc(obj);
+                this.refreshVisibleDocsFromState();
+                toast('Documento actualizado', 'ok');
+            });
+        },
+        cloneDocument(doc) {
+            const copy = { ...doc }; delete copy._id;
+            this.openEditor('Clonar documento', 'Se insertará como un documento nuevo', safeStringify(copy, 2), async (obj) => {
+                delete obj._id;
+                const result = await this.client.insertOne(this.sel.col, obj);
+                const nextDoc = deepCloneJson(obj);
+                if (nextDoc && typeof nextDoc === 'object' && !Array.isArray(nextDoc) &&
+                    result && Object.prototype.hasOwnProperty.call(result, 'insertedId')) {
+                    nextDoc._id = deepCloneJson(result.insertedId);
+                }
+                if (nextDoc && typeof nextDoc === 'object' && !Array.isArray(nextDoc) && typeof nextDoc._id !== 'undefined') {
+                    this.replaceOrInsertVisibleDoc(nextDoc);
+                    this.refreshVisibleDocsFromState();
+                } else {
+                    this.runQuery();
+                }
+                toast('Documento clonado', 'ok');
+            });
+        },
+        deleteDocument(doc) {
+            const id = doc._id;
+            if (typeof id === 'undefined') return toast('El documento no tiene _id', 'err');
+            this.confirm('Eliminar documento', `_id: ${idToString(id)}\nEsta acción no se puede deshacer.`, async () => {
+                const deleteFilter = { _id: deepCloneJson(id) };
+                await this.client.deleteOne(this.sel.col, deleteFilter);
+                this.removeVisibleDoc(doc);
+                this.refreshVisibleDocsFromState();
+                toast('Documento eliminado', 'ok');
+            });
+        },
+        async copyDoc(doc) {
+            try { await navigator.clipboard.writeText(safeStringify(doc, 2)); toast('JSON copiado', 'ok'); }
+            catch { toast('No se pudo copiar', 'err'); }
+        },
+        sortDocsByCurrentQuery(docs) {
+            const rows = Array.isArray(docs) ? docs.slice() : [];
+            const sort = this.lastQuery && this.lastQuery.sort && typeof this.lastQuery.sort === 'object' ? this.lastQuery.sort : {};
+            const entries = Object.entries(sort);
+            if (!entries.length) return rows;
+            rows.sort((a, b) => {
+                for (const [field, dir] of entries) {
+                    const cmp = compareValuesForSort(getByPath(a, field), getByPath(b, field));
+                    if (cmp !== 0) return cmp * (dir < 0 ? -1 : 1);
+                }
+                return 0;
+            });
+            return rows;
+        },
+        normalizeDocForCurrentView(doc) {
+            return applyProjectionToDoc(deepCloneJson(doc), this.lastQuery?.projection);
+        },
+        matchesCurrentQuery(doc) {
+            return matchesMongoLikeFilter(doc, this.lastQuery?.filter || {});
+        },
+        replaceOrInsertVisibleDoc(doc) {
+            const normalized = this.normalizeDocForCurrentView(doc);
+            const key = docIdString(normalized) || docIdString(doc);
+            let docs = Array.isArray(this.lastDocs) ? this.lastDocs.slice() : [];
+            if (key != null) docs = docs.filter(item => docIdString(item) !== key);
+            if (this.matchesCurrentQuery(doc)) {
+                docs.unshift(normalized);
+                docs = this.sortDocsByCurrentQuery(docs);
+            }
+            this.lastDocs = docs.slice(0, this.page.limit);
+            this.page.count = this.lastDocs.length;
+        },
+        removeVisibleDoc(doc) {
+            const key = docIdString(doc);
+            if (key == null) return;
+            this.lastDocs = (this.lastDocs || []).filter(item => docIdString(item) !== key);
+            this.page.count = this.lastDocs.length;
+        },
+        applyCollectionEventToVisibleDocs(ev) {
+            if (!this.client || !this.lastQuery || this.page.skip > 0) return false;
+            const simpleEvents = new Set(['insertOne', 'updateOne', 'replaceOne', 'deleteOne']);
+            if (!simpleEvents.has(ev.event)) return false;
+            if (ev.event === 'insertOne') {
+                if (!ev.after) return false;
+                if (!this.matchesCurrentQuery(ev.after)) return true;
+                this.replaceOrInsertVisibleDoc(ev.after);
+                return true;
+            }
+            if (ev.event === 'deleteOne') {
+                if (!ev.before) return false;
+                this.removeVisibleDoc(ev.before);
+                return true;
+            }
+            if (ev.event === 'updateOne' || ev.event === 'replaceOne') {
+                if (ev.after && this.matchesCurrentQuery(ev.after)) {
+                    this.replaceOrInsertVisibleDoc(ev.after);
+                } else if (ev.before) {
+                    this.removeVisibleDoc(ev.before);
+                } else if (ev.after) {
+                    return true;
+                } else {
+                    return false;
+                }
+                return true;
+            }
+            return false;
+        },
+        /* =====================================================================
+           ACTIVIDAD / EVENTOS DE CAMBIO (feature 4)
+           ===================================================================== */
+        toggleActivity() {
+            this.activityOpen = !this.activityOpen;
+            document.getElementById('activity').classList.toggle('open', this.activityOpen);
+            document.getElementById('activity-btn').classList.toggle('on', this.activityOpen);
+            if (this.activityOpen) { this.unseen = 0; this.updateActivityBadge(); }
+        },
+        clearActivity() { this.activity = []; this.activityPage = 0; this.renderActivity(); },
+        updateActivityBadge() {
+            const b = document.getElementById('activity-badge');
+            b.textContent = this.unseen > 99 ? '99+' : String(this.unseen);
+            b.classList.toggle('show', this.unseen > 0);
+        },
+        onChangeEvent(ev) {
+            const mine = false;
+            ev._uid = ++this._actSeq; ev._mine = mine;
+            this.activity.unshift(ev);
+            if (this.activity.length > 100) this.activity.length = 100;
+            this.activityPage = 0;
+            if (!this.activityOpen) { this.unseen++; this.updateActivityBadge(); }
+            this.renderActivity();
+            const target = ev.collectionName ? `${ev.database_name}.${ev.collectionName}` : ev.database_name;
+            if (!mine) toast(`Cambio: ${ev.event} en ${target}`, 'info');
+            // Cambios estructurales externos: refrescar árbol/colecciones.
+            if (ev.category === 'database' && !mine) {
+                this.colsByDb.delete(ev.database_name);
+                this.refresh();
+                if (ev.event === 'deleteDatabase' && this.sel.db === ev.database_name) this.closeWorkspace();
+                if ((ev.event === 'deleteCollection' || ev.event === 'renameCollection') &&
+                    this.sel.db === ev.database_name && this.sel.col === ev.collectionName) this.closeWorkspace();
+            }
+            // Cambios de documentos externos en la colección abierta: recargar en vivo.
+            if (!mine && ev.category === 'collection' && this.client &&
+                this.sel.db === ev.database_name && this.sel.col === ev.collectionName) {
+                if (this.applyCollectionEventToVisibleDocs(ev)) this.refreshVisibleDocsFromState();
+                else this.runQuery();
+            }
+        },
+        actBadgeClass(event) {
+            if (event === 'insertOne') return 'ins';
+            if (event === 'deleteOne' || event === 'deleteMany' || event === 'deleteCollection' || event === 'deleteDatabase') return 'del';
+            if (event === 'updateOne' || event === 'replaceOne' || event === 'updateCollection' || event === 'importCollection' || event === 'importDatabase') return 'upd';
+            return 'struct';
+        },
+        renderActivity() {
+            // #region debug-point D:renderActivity-enter
+            window.__dbgMcs = window.__dbgMcs || { treeDepth: 0, activityDepth: 0, seq: 0 };
+            const dbgActSeq = ++window.__dbgMcs.seq;
+            window.__dbgMcs.activityDepth += 1;
+            debugReport('D', 'index.html:renderActivity:enter', '[DEBUG] renderActivity enter', {
+                seq: dbgActSeq,
+                depth: window.__dbgMcs.activityDepth,
+                activityCount: this.activity.length,
+                activityPage: this.activityPage,
+                activityOpen: this.activityOpen
+            });
+            // #endregion
+            try {
+            const list = document.getElementById('activity-list');
+            if (!this.activity.length) { list.innerHTML = '<div class="act-empty">Sin actividad todavía. Los cambios en cualquier base/colección aparecerán aquí en tiempo real.</div>'; return; }
+            list.innerHTML = '';
+            const page = this.paginate(this.activity, this.activityPage, this.ACTIVITY_PAGE_SIZE);
+            this.activityPage = page.page;
+            page.items.forEach(ev => {
+                const item = document.createElement('div'); item.className = 'act-item' + (ev._mine ? '' : ' external');
+                const top = document.createElement('div'); top.className = 'act-top';
+                const badge = document.createElement('span'); badge.className = 'act-badge ' + this.actBadgeClass(ev.event); badge.textContent = ev.event;
+                const tgt = document.createElement('span'); tgt.className = 'act-target';
+                tgt.textContent = ev.collectionName ? `${ev.database_name}.${ev.collectionName}` : ev.database_name;
+                const origin = document.createElement('span'); origin.className = 'act-origin ' + (ev._mine ? 'me' : 'ext'); origin.textContent = ev._mine ? 'aquí' : 'externo';
+                const time = document.createElement('span'); time.className = 'act-time';
+                time.textContent = ev.ts ? new Date(ev.ts).toLocaleTimeString() : '';
+                top.append(badge, tgt, origin, time);
+                const body = document.createElement('div'); body.className = 'act-body';
+                const sections = [];
+                if (ev.summary && Object.keys(ev.summary).length) sections.push(['Resumen', ev.summary]);
+                if (ev.before !== undefined && ev.before !== null) sections.push(['Antes', ev.before]);
+                if (ev.after !== undefined && ev.after !== null) sections.push(['Después', ev.after]);
+                if (!sections.length) sections.push(['Detalle', { event: ev.event, database_name: ev.database_name, collectionName: ev.collectionName || null }]);
+                body.innerHTML = sections.map(([lbl, data]) =>
+                    `<div class="act-ba"><div class="lbl">${escapeHtml(lbl)}</div><pre class="act-json">${highlightJson(data)}</pre></div>`
+                ).join('');
+                top.onclick = () => body.classList.toggle('open');
+                item.append(top, body);
+                list.appendChild(item);
+            });
+            const pager = this.buildMiniPager(page, (nextPage) => this.setActivityPage(nextPage), false);
+            if (pager) list.appendChild(pager);
+            } finally {
+                // #region debug-point D:renderActivity-exit
+                debugReport('D', 'index.html:renderActivity:exit', '[DEBUG] renderActivity exit', {
+                    seq: dbgActSeq,
+                    depth: window.__dbgMcs.activityDepth,
+                    activityPage: this.activityPage
+                });
+                window.__dbgMcs.activityDepth = Math.max(0, window.__dbgMcs.activityDepth - 1);
+                // #endregion
+            }
+        },
+        /* ---------- descarga util ---------- */
+        downloadJson(obj, filename) {
+            const blob = new Blob([safeStringify(obj, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = filename;
+            document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        },
+        exportJson() {
+            const docs = this.getRenderedDocs();
+            if (!docs.length) return toast('No hay resultados para exportar', 'err');
+            this.downloadJson(docs, `${this.sel.db}.${this.sel.col}.json`);
+        },
+        /* =====================================================================
+           IMPORTAR / EXPORTAR  (snapshots JSON de MongoDB)
+           ===================================================================== */
+        _dbStats(data) {
+            let cols = 0, docs = 0;
+            if (data && typeof data === 'object' && !Array.isArray(data)) {
+                for (const v of Object.values(data)) { cols++; if (Array.isArray(v)) docs += v.length; }
+            }
+            return { cols, docs };
+        },
+        _inferDbCollectionFromFilename(filename) {
+            const clean = (filename || '').replace(/\.json$/i, '').trim();
+            if (!clean) return null;
+            const parts = clean.split('.').map(p => p.trim()).filter(Boolean);
+            if (parts.length < 2) return null;
+            const collection = parts.pop();
+            const db = parts.join('.');
+            if (!db || !collection) return null;
+            return { db, collection };
+        },
+        _normalizeDocsForDbImport(parsed) {
+            if (Array.isArray(parsed)) return parsed;
+            if (parsed && typeof parsed === 'object') return [parsed];
+            return null;
+        },
+        // Detecta el formato del archivo y devuelve [{ name, data }, ...].
+        _classifyDbImport(filename, parsed) {
+            const baseName = (filename || 'database').replace(/\.json$/i, '');
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                // Paquete de respaldo con metadatos
+                if (parsed.databases && typeof parsed.databases === 'object' && !Array.isArray(parsed.databases)) {
+                    return Object.entries(parsed.databases).map(([name, data]) => ({ name, data }));
+                }
+                const values = Object.values(parsed);
+                // Archivo de una sola base: { coleccion: [...], ... }
+                if (values.every(v => Array.isArray(v))) return [{ name: baseName, data: parsed }];
+                // Objeto de bases sin envoltura: { db: { col: [...] }, ... }
+                if (values.length && values.every(v => v && typeof v === 'object' && !Array.isArray(v))) {
+                    return Object.entries(parsed).map(([name, data]) => ({ name, data }));
+                }
+            }
+            const inferred = this._inferDbCollectionFromFilename(filename);
+            const docs = this._normalizeDocsForDbImport(parsed);
+            if (inferred && docs) {
+                return [{ name: inferred.db, data: { [inferred.collection]: docs } }];
+            }
+            throw new Error(`Formato no reconocido en ${filename}`);
+        },
+        // Para importar a una colección: extrae un arreglo de documentos del archivo.
+        _extractDocsForCollection(parsed, col) {
+            if (Array.isArray(parsed)) return parsed;
+            if (parsed && typeof parsed === 'object') {
+                if (col && Array.isArray(parsed[col])) return parsed[col];
+                const arrKeys = Object.keys(parsed).filter(k => Array.isArray(parsed[k]));
+                if (arrKeys.length === 1) return parsed[arrKeys[0]];
+                if (arrKeys.length === 0 && Object.keys(parsed).length) return [parsed]; // documento único
+            }
+            return null;
+        },
+        pickFiles(multiple) {
+            return new Promise((resolve) => {
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.accept = '.json,application/json';
+                input.multiple = !!multiple;
+                input.style.display = 'none';
+                document.body.appendChild(input);
+                input.onchange = () => { const files = Array.from(input.files || []); input.remove(); resolve(files); };
+                input.click();
+            });
+        },
+        readFileText(file) {
+            return new Promise((resolve, reject) => {
+                const r = new FileReader();
+                r.onload = () => resolve(String(r.result));
+                r.onerror = () => reject(new Error('No se pudo leer ' + file.name));
+                r.readAsText(file);
+            });
+        },
+        mkBtn(label, cls, onClick) {
+            const b = document.createElement('button'); b.className = 'btn' + (cls ? ' ' + cls : '');
+            b.textContent = label; b.onclick = onClick; return b;
+        },
+        openCustomModal(title, sub, bodyNode, footButtons) {
+            document.getElementById('modal-title').textContent = title;
+            document.getElementById('modal-sub').textContent = sub || '';
+            const body = document.getElementById('modal-body'); body.className = 'modal-body';
+            body.innerHTML = ''; body.appendChild(bodyNode);
+            const foot = document.getElementById('modal-foot'); foot.innerHTML = '';
+            (footButtons || []).forEach(b => foot.appendChild(b));
+            this.showModal();
+        },
+        /* ---------- exportar ---------- */
+        async exportDatabase(db) {
+            try {
+                const data = await dbAction('exportDatabase', { database_name: db });
+                this.downloadJson(data || {}, `${db}.json`);
+                toast('Base de datos exportada', 'ok');
+            } catch (e) { toast('Error al exportar: ' + e.message, 'err'); }
+        },
+        async exportCollection(db, col) {
+            if (isReservedCollectionName(col)) return toast('Reserved collections cannot be exported', 'err');
+            try {
+                const data = await colAction(db, col, 'exportCollection', {});
+                this.downloadJson(Array.isArray(data) ? data : [], `${db}.${col}.json`);
+                toast('Colección exportada', 'ok');
+            } catch (e) { toast('Error al exportar: ' + e.message, 'err'); }
+        },
+        exportDatabasesPrompt() {
+            if (!this.dbs.length) return toast('No hay bases de datos para exportar', 'err');
+            const wrap = document.createElement('div');
+            const top = document.createElement('label'); top.className = 'pick-row'; top.style.fontWeight = '700';
+            const allCb = document.createElement('input'); allCb.type = 'checkbox'; allCb.checked = true;
+            const allName = document.createElement('span'); allName.className = 'pk-name'; allName.textContent = 'Seleccionar todas';
+            top.append(allCb, allName);
+            const list = document.createElement('div'); list.className = 'pick-list';
+            const cbs = [];
+            this.dbs.forEach(db => {
+                const row = document.createElement('label'); row.className = 'pick-row';
+                const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = true; cb.value = db;
+                const name = document.createElement('span'); name.className = 'pk-name'; name.textContent = db;
+                row.append(cb, name); list.appendChild(row); cbs.push(cb);
+            });
+            allCb.onchange = () => cbs.forEach(c => c.checked = allCb.checked);
+            list.addEventListener('change', () => { allCb.checked = cbs.every(c => c.checked); });
+            const hint = document.createElement('p'); hint.className = 'help';
+            hint.textContent = 'Puedes exportar una base a JSON o agrupar varias en un único respaldo reimportable.';
+            wrap.append(top, list, hint);
+            const cancel = this.mkBtn('Cancelar', '', () => this.closeModal());
+            const go = this.mkBtn('Exportar', 'primary', async () => {
+                const selected = cbs.filter(c => c.checked).map(c => c.value);
+                if (!selected.length) return toast('Selecciona al menos una base de datos', 'err');
+                go.disabled = true; go.textContent = 'Exportando…';
+                try {
+                    const databases = {};
+                    for (const db of selected) databases[db] = await dbAction('exportDatabase', { database_name: db });
+                    if (selected.length === 1) {
+                        this.downloadJson(databases[selected[0]], `${selected[0]}.json`);
+                    } else {
+                        const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+                        this.downloadJson({ __mongodb_admin_export__: 1, exported_at: new Date().toISOString(), databases }, `mongodb-admin-export-${stamp}.json`);
+                    }
+                    this.closeModal();
+                    toast(`${selected.length} base${selected.length === 1 ? '' : 's'} exportada${selected.length === 1 ? '' : 's'}`, 'ok');
+                } catch (e) { toast('Error al exportar: ' + e.message, 'err'); go.disabled = false; go.textContent = 'Exportar'; }
+            });
+            this.openCustomModal('Exportar bases de datos', `${this.dbs.length} disponibles`, wrap, [cancel, go]);
+        },
+        /* ---------- importar ---------- */
+        async importDatabasesPrompt() {
+            let files;
+            try { files = await this.pickFiles(true); } catch { return; }
+            if (!files || !files.length) return;
+            const items = [];
+            for (const f of files) {
+                let text;
+                try { text = await this.readFileText(f); } catch (e) { toast(e.message, 'err'); continue; }
+                const parsed = safeJsonParse(text, undefined);
+                if (parsed === undefined) { toast(`JSON inválido en ${f.name}`, 'err'); continue; }
+                try { this._classifyDbImport(f.name, parsed).forEach(it => items.push(it)); }
+                catch (e) { toast(e.message, 'err'); }
+            }
+            if (!items.length) return toast('No se encontró ninguna base de datos válida en los archivos', 'err');
+            this.showDbImportReview(items);
+        },
+        showDbImportReview(items) {
+            const wrap = document.createElement('div');
+            const modeWrap = document.createElement('div'); modeWrap.className = 'mode-group';
+            const modes = [
+                { v: 'replace', label: 'Reemplazar contenido' },
+                { v: 'merge', label: 'Combinar (por _id)' },
+            ];
+            let mode = 'replace';
+            const modeOpts = [];
+            modes.forEach(m => {
+                const lab = document.createElement('label'); lab.className = 'mode-opt' + (m.v === mode ? ' sel' : '');
+                const rb = document.createElement('input'); rb.type = 'radio'; rb.name = 'impdbmode'; rb.value = m.v; rb.checked = m.v === mode;
+                const sp = document.createElement('span'); sp.textContent = m.label;
+                lab.append(rb, sp); modeWrap.appendChild(lab); modeOpts.push({ lab, rb });
+                rb.onchange = () => { mode = m.v; modeOpts.forEach(o => o.lab.classList.toggle('sel', o.rb.checked)); };
+            });
+            const lst = document.createElement('div'); lst.className = 'imp-list';
+            const rows = [];
+            items.forEach(it => {
+                const row = document.createElement('div'); row.className = 'imp-row';
+                const inp = document.createElement('input'); inp.className = 'imp-name'; inp.value = it.name;
+                const meta = document.createElement('span'); meta.className = 'imp-meta';
+                const st = this._dbStats(it.data); meta.textContent = `${st.cols} col · ${st.docs} docs`;
+                const badge = document.createElement('span');
+                const setBadge = (n) => { const ex = this.dbs.includes(n); badge.className = 'badge ' + (ex ? 'warn' : 'new'); badge.textContent = ex ? 'existe' : 'nueva'; };
+                setBadge(it.name);
+                inp.oninput = () => setBadge(inp.value.trim());
+                row.append(inp, meta, badge); lst.appendChild(row);
+                rows.push({ inp, data: it.data });
+            });
+            const hint = document.createElement('p'); hint.className = 'help';
+            hint.textContent = 'Reemplazar sobrescribe por completo cada base; Combinar conserva las colecciones existentes y hace upsert por _id. Edita el nombre para crear una base distinta.';
+            wrap.append(modeWrap, lst, hint);
+            const cancel = this.mkBtn('Cancelar', '', () => this.closeModal());
+            const go = this.mkBtn('Importar', 'primary', async () => {
+                const targets = rows.map(r => ({ name: r.inp.value.trim(), data: r.data }));
+                go.disabled = true; go.textContent = 'Importando…';
+                let okCount = 0;
+                try {
+                    for (const t of targets) {
+                        await dbAction('importDatabase', { database_name: t.name, data: t.data, mode });
+                        this.openDbs.add(t.name); this.colsByDb.delete(t.name);
+                        okCount++;
+                    }
+                    this.closeModal();
+                    await this.refresh();
+                    toast(`${okCount} base${okCount === 1 ? '' : 's'} importada${okCount === 1 ? '' : 's'}`, 'ok');
+                } catch (e) {
+                    toast('Error al importar: ' + e.message, 'err');
+                    go.disabled = false; go.textContent = 'Importar';
+                    await this.refresh();
+                }
+            });
+            this.openCustomModal('Importar bases de datos', `${items.length} base${items.length === 1 ? '' : 's'} detectada${items.length === 1 ? '' : 's'}`, wrap, [cancel, go]);
+        },
+        async importCollectionPrompt(db, col) {
+            if (isReservedCollectionName(col)) return toast('Reserved collections cannot be managed from the UI', 'err');
+            let files;
+            try { files = await this.pickFiles(false); } catch { return; }
+            if (!files || !files.length) return;
+            const f = files[0];
+            let text;
+            try { text = await this.readFileText(f); } catch (e) { return toast(e.message, 'err'); }
+            const parsed = safeJsonParse(text, undefined);
+            if (parsed === undefined) return toast('JSON inválido en el archivo', 'err');
+            const docs = this._extractDocsForCollection(parsed, col);
+            if (!docs || !Array.isArray(docs)) return toast('El archivo debe contener un arreglo de documentos (o un objeto con una sola colección).', 'err');
+            let defaultCol = col;
+            if (!defaultCol) {
+                if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                    const arrKeys = Object.keys(parsed).filter(k => Array.isArray(parsed[k]));
+                    if (arrKeys.length === 1) defaultCol = arrKeys[0];
+                }
+                if (!defaultCol) defaultCol = (f.name || 'coleccion').replace(/\.json$/i, '').split('.').pop();
+            }
+            this.showCollectionImportReview(db, col, defaultCol, docs);
+        },
+        showCollectionImportReview(db, fixedCol, defaultCol, docs) {
+            const wrap = document.createElement('div');
+            const nameLabel = document.createElement('label'); nameLabel.className = 'field-label'; nameLabel.textContent = 'Colección destino';
+            const nameInput = document.createElement('input'); nameInput.className = 'input'; nameInput.value = fixedCol || defaultCol || ''; nameInput.style.marginBottom = '12px';
+            const modeWrap = document.createElement('div'); modeWrap.className = 'mode-group';
+            const modes = [
+                { v: 'merge', label: 'Combinar (por _id)' },
+                { v: 'append', label: 'Agregar como nuevos' },
+                { v: 'replace', label: 'Reemplazar colección' },
+            ];
+            let mode = 'merge';
+            const modeOpts = [];
+            modes.forEach(m => {
+                const lab = document.createElement('label'); lab.className = 'mode-opt' + (m.v === mode ? ' sel' : '');
+                const rb = document.createElement('input'); rb.type = 'radio'; rb.name = 'impcolmode'; rb.value = m.v; rb.checked = m.v === mode;
+                const sp = document.createElement('span'); sp.textContent = m.label;
+                lab.append(rb, sp); modeWrap.appendChild(lab); modeOpts.push({ lab, rb });
+                rb.onchange = () => { mode = m.v; modeOpts.forEach(o => o.lab.classList.toggle('sel', o.rb.checked)); };
+            });
+            const hint = document.createElement('p'); hint.className = 'help';
+            hint.textContent = `${docs.length} documento${docs.length === 1 ? '' : 's'} en el archivo · destino "${db}". La colección se crea si no existe.`;
+            wrap.append(nameLabel, nameInput, modeWrap, hint);
+            const cancel = this.mkBtn('Cancelar', '', () => this.closeModal());
+            const go = this.mkBtn('Importar', 'primary', async () => {
+                const targetCol = nameInput.value.trim();
+                if (isReservedCollectionName(targetCol)) return toast('Reserved collections cannot be managed from the UI', 'err');
+                go.disabled = true; go.textContent = 'Importando…';
+                try {
+                    const res = await colAction(db, targetCol, 'importCollection', { data: docs, mode });
+                    this.closeModal();
+                    this.colsByDb.delete(db); this.openDbs.add(db);
+                    await this.refresh();
+                    if (this.sel.db === db && this.sel.col === targetCol) this.runQuery();
+                    else this.openCollection(db, targetCol);
+                    const ins = res && res.insertedCount != null ? res.insertedCount : 0;
+                    const mod = res && res.modifiedCount != null ? res.modifiedCount : 0;
+                    toast(`Importado: ${ins} nuevo(s), ${mod} actualizado(s)`, 'ok');
+                } catch (e) { toast('Error al importar: ' + e.message, 'err'); go.disabled = false; go.textContent = 'Importar'; }
+            });
+            this.openCustomModal('Importar a colección', `${db}`, wrap, [cancel, go]);
+        },
+        /* ---------- consultas guardadas (localStorage) ---------- */
+        qKey() { return `microservicedbdb:queries:${this.sel.db}:${this.sel.col}`; },
+        getSaved() {
+            const raw = localStorage.getItem(this.qKey());
+            const arr = safeJsonParse(raw || '[]', []);
+            return Array.isArray(arr) ? arr.filter(q => q && typeof q.name === 'string' && q.payload) : [];
+        },
+        setSaved(list) { localStorage.setItem(this.qKey(), JSON.stringify(list)); },
+        saveQuery() {
+            if (!this.client) return;
+            let q; try { q = this.readQuery(); } catch (e) { return toast(e.message, 'err'); }
+            this.prompt('Guardar consulta', 'Nombre de la consulta', '', (name) => {
+                const list = this.getSaved();
+                const payload = { filter: q.filter, sort: q.sort, project: q.projection || null, skip: q.skip, limit: q.limit };
+                const idx = list.findIndex(x => x.name === name);
+                if (idx >= 0) list[idx] = { name, payload }; else list.push({ name, payload });
+                this.setSaved(list);
+                this.renderSavedChips();
+                toast('Consulta guardada', 'ok');
+            });
+        },
+        renderSavedChips() {
+            const wrap = document.getElementById('saved-chips');
+            wrap.innerHTML = '';
+            const list = this.getSaved();
+            if (!list.length) { wrap.innerHTML = `<span style="font-size:0.78rem;color:var(--ink-3);">Sin consultas guardadas</span>`; return; }
+            list.forEach(q => {
+                const chip = document.createElement('span'); chip.className = 'chip';
+                const label = document.createElement('span'); label.textContent = '★ ' + q.name;
+                label.onclick = () => this.applySaved(q.payload);
+                const x = document.createElement('span'); x.className = 'x'; x.textContent = '×'; x.title = 'Eliminar';
+                x.onclick = (e) => { e.stopPropagation(); this.setSaved(this.getSaved().filter(i => i.name !== q.name)); this.renderSavedChips(); };
+                chip.append(label, x);
+                wrap.appendChild(chip);
+            });
+        },
+        applySaved(p) {
+            document.getElementById('q-skip').value = p.skip || 0;
+            document.getElementById('q-limit').value = p.limit || 25;
+            this.renderLimitPresets();
+            // orden
+            this.qb.sort = (p.sort && typeof p.sort === 'object') ? Object.entries(p.sort).map(([field, dir]) => ({ field, dir: dir < 0 ? -1 : 1 })) : [];
+            this.renderSortBuilder();
+            // proyección
+            if (p.project && typeof p.project === 'object') {
+                const keys = Object.keys(p.project);
+                const incFields = keys.filter(k => k !== '_id' && (p.project[k] === 1 || p.project[k] === true));
+                const excFields = keys.filter(k => k !== '_id' && (p.project[k] === 0 || p.project[k] === false));
+                if (incFields.length) { this.qb.project = { mode: 'include', fields: incFields, includeId: true }; this.setProjectMode('include', true); }
+                else if (excFields.length) { this.qb.project = { mode: 'exclude', fields: excFields, includeId: !(p.project._id === 0 || p.project._id === false) }; this.setProjectMode('exclude', true); }
+                else { this.qb.project = { mode: 'none', fields: [], includeId: true }; this.setProjectMode('none', true); }
+            } else { this.qb.project = { mode: 'none', fields: [], includeId: true }; this.setProjectMode('none', true); }
+            // filtro → JSON avanzado
+            this.qb.filterMode = 'advanced';
+            document.getElementById('q-filter').value = JSON.stringify(p.filter || {});
+            document.querySelectorAll('#filter-mode-seg button').forEach(b => b.classList.toggle('on', b.dataset.fm === 'advanced'));
+            document.getElementById('filter-simple').style.display = 'none';
+            document.getElementById('q-filter').style.display = 'block';
+            const o = document.getElementById('qopts');
+            if (!o.classList.contains('open')) this.toggleOpts();
+            this.runQuery();
+        },
+        /* ---------- editor JSON modal ---------- */
+        openEditor(title, sub, initial, onSave) {
+            document.getElementById('modal-title').textContent = title;
+            document.getElementById('modal-sub').textContent = sub || '';
+            const body = document.getElementById('modal-body');
+            body.className = 'modal-body';
+            body.innerHTML = `<textarea class="editor" id="json-editor" spellcheck="false">${escapeHtml(initial)}</textarea><div class="editor-status" id="ed-status"></div>`;
+            const ed = document.getElementById('json-editor');
+            const status = document.getElementById('ed-status');
+            const check = () => {
+                const v = ed.value.trim();
+                const parsed = safeJsonParse(v, undefined);
+                if (v && (parsed === undefined || typeof parsed !== 'object')) { ed.classList.add('invalid'); status.className = 'editor-status err'; status.textContent = 'JSON inválido'; return false; }
+                ed.classList.remove('invalid'); status.className = 'editor-status ok'; status.textContent = v ? '✓ JSON válido' : ''; return true;
+            };
+            ed.oninput = check; check();
+            ed.addEventListener('keydown', (e) => {
+                if (e.key === 'Tab') { e.preventDefault(); const s = ed.selectionStart, en = ed.selectionEnd; ed.value = ed.value.slice(0, s) + '  ' + ed.value.slice(en); ed.selectionStart = ed.selectionEnd = s + 2; }
+                if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); doSave(); }
+            });
+            const foot = document.getElementById('modal-foot');
+            foot.innerHTML = '';
+            const cancel = document.createElement('button'); cancel.className = 'btn'; cancel.textContent = 'Cancelar'; cancel.onclick = () => this.closeModal();
+            const save = document.createElement('button'); save.className = 'btn primary'; save.textContent = 'Guardar';
+            const doSave = async () => {
+                if (!check()) return;
+                const obj = safeJsonParse(ed.value.trim() || '{}', undefined);
+                if (obj === undefined || typeof obj !== 'object') { status.className = 'editor-status err'; status.textContent = 'JSON inválido'; return; }
+                save.disabled = true; save.textContent = 'Guardando…';
+                try { await onSave(obj); this.closeModal(); }
+                catch (e) { toast(e.message, 'err'); save.disabled = false; save.textContent = 'Guardar'; }
+            };
+            save.onclick = doSave;
+            foot.append(cancel, save);
+            this.showModal();
+            setTimeout(() => ed.focus(), 60);
+        },
+        prompt(title, label, value, onOk) {
+            document.getElementById('modal-title').textContent = title;
+            document.getElementById('modal-sub').textContent = '';
+            const body = document.getElementById('modal-body'); body.className = 'modal-body';
+            body.innerHTML = `<label class="field-label">${escapeHtml(label)}</label><input class="input" id="prompt-input" value="${escapeHtml(value || '')}">`;
+            const input = document.getElementById('prompt-input');
+            const foot = document.getElementById('modal-foot'); foot.innerHTML = '';
+            const cancel = document.createElement('button'); cancel.className = 'btn'; cancel.textContent = 'Cancelar'; cancel.onclick = () => this.closeModal();
+            const ok = document.createElement('button'); ok.className = 'btn primary'; ok.textContent = 'Aceptar';
+            const submit = async () => { const v = input.value.trim(); if (!v) return input.focus(); ok.disabled = true; try { await onOk(v); this.closeModal(); } catch (e) { toast(e.message, 'err'); ok.disabled = false; } };
+            ok.onclick = submit;
+            input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
+            foot.append(cancel, ok);
+            this.showModal();
+            setTimeout(() => { input.focus(); input.select(); }, 60);
+        },
+        confirm(title, message, onOk) {
+            document.getElementById('modal-title').textContent = title;
+            document.getElementById('modal-sub').textContent = '';
+            const body = document.getElementById('modal-body'); body.className = 'modal-body';
+            body.innerHTML = `<p style="font-size:0.9rem;line-height:1.55;color:var(--ink-2);white-space:pre-line;">${escapeHtml(message)}</p>`;
+            const foot = document.getElementById('modal-foot'); foot.innerHTML = '';
+            const cancel = document.createElement('button'); cancel.className = 'btn'; cancel.textContent = 'Cancelar'; cancel.onclick = () => this.closeModal();
+            const ok = document.createElement('button'); ok.className = 'btn primary danger'; ok.style.background = 'var(--danger)'; ok.style.borderColor = 'var(--danger)'; ok.style.color = '#fff'; ok.textContent = 'Confirmar';
+            ok.onclick = async () => { ok.disabled = true; try { await onOk(); this.closeModal(); } catch (e) { toast(e.message, 'err'); ok.disabled = false; } };
+            foot.append(cancel, ok);
+            this.showModal();
+        },
+        showModal() { document.getElementById('overlay').classList.add('open'); },
+        closeModal() { document.getElementById('overlay').classList.remove('open'); },
+    };
+    document.getElementById('overlay').addEventListener('click', (e) => { if (e.target.id === 'overlay') App.closeModal(); });
+    document.getElementById('col-kebab').addEventListener('click', (e) => { e.stopPropagation(); App.colHeadMenu(e); });
+    window.App = App;
+    connect();
+    </script>
+</body>
+</html>
