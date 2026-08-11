@@ -32,8 +32,6 @@ Servidor de base de datos JSON escrito íntegramente en <strong>Rust asíncrono<
 
 </div>
 
-
-
 ## 📑 Índice
 
 1. [📌 Descripción General](#-descripción-general)
@@ -81,31 +79,31 @@ El binario resultante es único y autocontenido; el panel HTML se sirve desde el
 
 ## ✨ Características Principales
 
-| Capa | Detalle |
-|  |  |
-| ⚙️ **Runtime** | Rust 1.80+, Tokio async runtime completo |
-| 🌐 **Servidor** | Warp 0.3 con TLS nativo (rustls) |
-| 🗄️ **Persistencia** | MongoDB 7.x (driver oficial 3.x), compatible con sharded clusters |
-| ⚡ **Caché** | Redis / Dragonfly (opcional) — requests, documentos e índices |
-| 🧠 **Auto-indexado** | Monitoriza campos frecuentemente consultados y propone/crea índices |
-| 🔌 **Protocolo** | WebSocket + JSON (principal) · HTTP POST `/event` (debug UI) |
-| 🖥️ **Panel Web** | SPA en `MicroserviceDB.html` embebida con `include_str!` |
-| 💾 **Backups** | JSON completo + 7z (LZMA2, nivel 9), con rotación de 2 slots/hora |
-| 📦 **Clientes oficiales** | TypeScript (browser + Node) y Rust |
-| 🚀 **Despliegue** | Binario único · Docker Compose para Mongo sharded + Dragonfly |
+| Capa                      | Detalle                                                             |
+| ------------------------- | ------------------------------------------------------------------- |
+| ⚙️ **Runtime**            | Rust 1.80+, Tokio async runtime completo                            |
+| 🌐 **Servidor**           | Warp 0.3 con TLS nativo (rustls)                                    |
+| 🗄️ **Persistencia**       | MongoDB 7.x (driver oficial 3.x), compatible con sharded clusters   |
+| ⚡ **Caché**              | Redis / Dragonfly (opcional) — requests, documentos e índices       |
+| 🧠 **Auto-indexado**      | Monitoriza campos frecuentemente consultados y propone/crea índices |
+| 🔌 **Protocolo**          | WebSocket + JSON (principal) · HTTP POST `/event` (debug UI)        |
+| 🖥️ **Panel Web**          | SPA en `MicroserviceDB.html` embebida con `include_str!`            |
+| 💾 **Backups**            | JSON completo + 7z (LZMA2, nivel 9), con rotación de 2 slots/hora   |
+| 📦 **Clientes oficiales** | TypeScript (browser + Node) y Rust                                  |
+| 🚀 **Despliegue**         | Binario único · Docker Compose para Mongo sharded + Dragonfly       |
 
 ## 🧠 Stack Tecnológico
 
-| Tecnología | Rol en el proyecto |
-|  |  |
-| **Rust (edición 2021)** | Lenguaje central del servidor |
-| **Tokio** | Runtime asíncrono y concurrencia |
-| **Warp** | Servidor HTTP/WebSocket con TLS (rustls) |
+| Tecnología               | Rol en el proyecto                            |
+| ------------------------ | --------------------------------------------- |
+| **Rust (edición 2021)**  | Lenguaje central del servidor                 |
+| **Tokio**                | Runtime asíncrono y concurrencia              |
+| **Warp**                 | Servidor HTTP/WebSocket con TLS (rustls)      |
 | **MongoDB (driver 3.x)** | Persistencia, compatible con clusters sharded |
-| **Redis / Dragonfly** | Caché de requests, documentos e índices |
-| **7-Zip (LZMA2)** | Compresión de backups |
-| **TypeScript & Rust** | Librerías cliente oficiales |
-| **Docker Compose** | Orquestación del cluster de desarrollo |
+| **Redis / Dragonfly**    | Caché de requests, documentos e índices       |
+| **7-Zip (LZMA2)**        | Compresión de backups                         |
+| **TypeScript & Rust**    | Librerías cliente oficiales                   |
+| **Docker Compose**       | Orquestación del cluster de desarrollo        |
 
 ## 🏗️ Arquitectura
 
@@ -142,13 +140,13 @@ El binario resultante es único y autocontenido; el panel HTML se sirve desde el
 
 ## 📋 Requisitos Previos
 
-| Componente | Versión mínima |
-|  |  |
-| **Rust** | 1.78 (edición 2021) |
-| **MongoDB** | 6.0+ (recomendado 7.x) |
-| **Redis / Dragonfly** | Cualquier versión compatible RESP2 (opcional) |
-| **7-Zip** | Si se usa `--backup` (ejecutable `7z` o `7za` en `PATH`) |
-| **Node.js** | Solo si usas la librería TypeScript cliente (opcional) |
+| Componente            | Versión mínima                                           |
+| --------------------- | -------------------------------------------------------- |
+| **Rust**              | 1.78 (edición 2021)                                      |
+| **MongoDB**           | 6.0+ (recomendado 7.x)                                   |
+| **Redis / Dragonfly** | Cualquier versión compatible RESP2 (opcional)            |
+| **7-Zip**             | Si se usa `--backup` (ejecutable `7z` o `7za` en `PATH`) |
+| **Node.js**           | Solo si usas la librería TypeScript cliente (opcional)   |
 
 ## 🚀 Instalación Rápida
 
@@ -190,7 +188,7 @@ cargo build --release
 Edita el archivo `.env` en la raíz del proyecto (se carga con `dotenvy`). Todas las variables están prefijadas con `MICROSERVICEDB_` excepto los TTL de caché.
 
 | Variable | Obligatoria | Default | Descripción |
-|  | :: |  |  |
+| | :: |--|--|
 | `MICROSERVICEDB_MONGODB_URI` | ✅ | `mongodb://127.0.0.1:27017/…` | URI de MongoDB (standalone, replSet o sharded `mongodb://mongos`) |
 | `MICROSERVICEDB_DRAGONFLY_URL` | ❌ | — | URL de Redis/Dragonfly. Sin ella, la caché se desactiva pero el servidor funciona. |
 | `MICROSERVICEDB_PORT` | ❌ | `3329` | Puerto HTTP / WebSocket |
@@ -215,7 +213,7 @@ json-db-server [--backup]
 MicroserviceDB solo expone 3 rutas HTTP; toda la operativa real se realiza vía WebSocket:
 
 | Ruta | Método | Descripción |
-|  |  |  |
+|--|--| |
 | `/` | `GET` | Devuelve el **Panel Administrativo Web** embebido (`MicroserviceDB.html`) |
 | `/ws` | `GET` (Upgrade) | **Endpoint WebSocket principal** por donde viajan todas las queries |
 | `/event` | `POST` | Endpoint de depuración del panel UI. Acepta JSON y lo loguea a nivel `debug`, devuelve `204 No Content` |
@@ -255,19 +253,19 @@ Deserializa `response_json` para obtener el cuerpo de la operación (array de do
 
 ### Comandos de `type`
 
-| `type` | Descripción |
-|  |  |
-| `metadata` | Devuelve el catálogo de funciones, eventos y capacidades del servidor. |
-| `list_databases` | Array con los nombres de todas las bases de datos. |
-| `list_collections` | Requiere `database_name`. Array con nombres de colecciones. |
-| `request` | Ejecuta una operación CRUD/administrativa en `category` + `function_name`. |
+| `type`             | Descripción                                                                |
+| ------------------ | -------------------------------------------------------------------------- |
+| `metadata`         | Devuelve el catálogo de funciones, eventos y capacidades del servidor.     |
+| `list_databases`   | Array con los nombres de todas las bases de datos.                         |
+| `list_collections` | Requiere `database_name`. Array con nombres de colecciones.                |
+| `request`          | Ejecuta una operación CRUD/administrativa en `category` + `function_name`. |
 
 ### Categoría `collection`
 
 Requieren `payload.collection_name` y `database_name` (por mensaje o global).
 
 | `function_name` | Payload (mínimo) | Salida (en `response_json`) |
-|  |  |  |
+|--|--| |
 | `find` | `{ filter, options? }` — options: `sort, projection, limit, skip` | `Document[]` |
 | `findOne` | `{ filter?, options? }` | `Document \| null` |
 | `insertOne` | `{ document }` | `{ acknowledged, insertedId }` |
@@ -284,7 +282,7 @@ Requieren `payload.collection_name` y `database_name` (por mensaje o global).
 Requieren `database_name`.
 
 | `function_name` | Payload | Descripción |
-|  |  |  |
+|--|--| |
 | `createDatabase` | `{ new_database_name, collection_name? }` | Crea la BD (y una colección inicial opcional) insertando un documento semilla. |
 | `deleteDatabase` | — | Elimina la base de datos y todas sus colecciones. |
 | `renameDatabase` | `{ new_database_name }` | Copia todas las colecciones al nuevo nombre y elimina la vieja. |
@@ -397,14 +395,14 @@ Requiere el ejecutable `7z` o `7za` accesible en el `PATH`.
 
 ## 🛠️ Scripts Utilitarios
 
-| Ruta | Descripción |
-|  |  |
-| `scripts/install/docker-compose.yml` | Cluster Mongo sharded 3×3 + mongos + Dragonfly |
-| `scripts/install/docker-compose_windows.ps1` | Envoltura Windows |
-| `scripts/install/docker-compose_linux_mac.sh` | Envoltura Unix |
-| `scripts/build/build_windows.ps1` | Build release + empaquetado (Windows) |
-| `scripts/build/build_linux_mac.sh` | Build release + empaquetado (Unix) |
-| `scripts/dev/MicroserviceDB_MongoManager.py` | Herramienta de manejo/seed de Mongo en Python |
+| Ruta                                          | Descripción                                    |
+| --------------------------------------------- | ---------------------------------------------- |
+| `scripts/install/docker-compose.yml`          | Cluster Mongo sharded 3×3 + mongos + Dragonfly |
+| `scripts/install/docker-compose_windows.ps1`  | Envoltura Windows                              |
+| `scripts/install/docker-compose_linux_mac.sh` | Envoltura Unix                                 |
+| `scripts/build/build_windows.ps1`             | Build release + empaquetado (Windows)          |
+| `scripts/build/build_linux_mac.sh`            | Build release + empaquetado (Unix)             |
+| `scripts/dev/MicroserviceDB_MongoManager.py`  | Herramienta de manejo/seed de Mongo en Python  |
 
 ## 🧰 Builds Multiplataforma
 
@@ -421,8 +419,6 @@ El binario resultante lleva embebido el panel administrativo y no requiere archi
 ## 📄 Licencia
 
 © Magnus Norgaard. Todos los derechos reservados. Consulta el documento PDF en [`docs/MicroserviceDB_v2.0.0.pdf`](docs/MicroserviceDB_v2.0.0.pdf) para términos de uso y distribución específicos.
-
-
 
 <div align="center">
 
