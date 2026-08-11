@@ -187,17 +187,17 @@ cargo build --release
 
 Edita el archivo `.env` en la raíz del proyecto (se carga con `dotenvy`). Todas las variables están prefijadas con `MICROSERVICEDB_` excepto los TTL de caché.
 
-| Variable | Obligatoria | Default | Descripción |
-| | :: |--|--|
-| `MICROSERVICEDB_MONGODB_URI` | ✅ | `mongodb://127.0.0.1:27017/…` | URI de MongoDB (standalone, replSet o sharded `mongodb://mongos`) |
-| `MICROSERVICEDB_DRAGONFLY_URL` | ❌ | — | URL de Redis/Dragonfly. Sin ella, la caché se desactiva pero el servidor funciona. |
-| `MICROSERVICEDB_PORT` | ❌ | `3329` | Puerto HTTP / WebSocket |
-| `MICROSERVICEDB_LOG_LEVEL` | ❌ | `info` | `error \| warn \| info \| debug \| trace` |
-| `REQUEST_CACHE_TTL_SECS` | ❌ | `300` (5 min) | TTL en segundos de entradas en caché de requests |
-| `MICROSERVICEDB_BACKUP_DIR` | ❌ si `--backup` | `./backups` | Directorio donde almacenar los backups |
-| `MICROSERVICEDB_BACKUP_INTERVAL_MINS` | ❌ | `30` | Intervalo entre backups (minutos) |
-| `MICROSERVICEDB_SSL_CERT` | ❌ | — | Ruta a certificado PEM (activa HTTPS/WSS) |
-| `MICROSERVICEDB_SSL_KEY` | ❌ | — | Ruta a clave privada PEM (requerido si se usa cert) |
+| Variable                              | Obligatoria      | Default                       | Descripción                                                                        |
+| ------------------------------------- | ---------------- | ----------------------------- | ---------------------------------------------------------------------------------- |
+| `MICROSERVICEDB_MONGODB_URI`          | ✅               | `mongodb://127.0.0.1:27017/…` | URI de MongoDB (standalone, replSet o sharded `mongodb://mongos`)                  |
+| `MICROSERVICEDB_DRAGONFLY_URL`        | ❌               | —                             | URL de Redis/Dragonfly. Sin ella, la caché se desactiva pero el servidor funciona. |
+| `MICROSERVICEDB_PORT`                 | ❌               | `3329`                        | Puerto HTTP / WebSocket                                                            |
+| `MICROSERVICEDB_LOG_LEVEL`            | ❌               | `info`                        | `error \| warn \| info \| debug \| trace`                                          |
+| `REQUEST_CACHE_TTL_SECS`              | ❌               | `300` (5 min)                 | TTL en segundos de entradas en caché de requests                                   |
+| `MICROSERVICEDB_BACKUP_DIR`           | ❌ si `--backup` | `./backups`                   | Directorio donde almacenar los backups                                             |
+| `MICROSERVICEDB_BACKUP_INTERVAL_MINS` | ❌               | `30`                          | Intervalo entre backups (minutos)                                                  |
+| `MICROSERVICEDB_SSL_CERT`             | ❌               | —                             | Ruta a certificado PEM (activa HTTPS/WSS)                                          |
+| `MICROSERVICEDB_SSL_KEY`              | ❌               | —                             | Ruta a clave privada PEM (requerido si se usa cert)                                |
 
 ### CLI
 
@@ -212,11 +212,11 @@ json-db-server [--backup]
 
 MicroserviceDB solo expone 3 rutas HTTP; toda la operativa real se realiza vía WebSocket:
 
-| Ruta | Método | Descripción |
-|--|--| |
-| `/` | `GET` | Devuelve el **Panel Administrativo Web** embebido (`MicroserviceDB.html`) |
-| `/ws` | `GET` (Upgrade) | **Endpoint WebSocket principal** por donde viajan todas las queries |
-| `/event` | `POST` | Endpoint de depuración del panel UI. Acepta JSON y lo loguea a nivel `debug`, devuelve `204 No Content` |
+| Ruta     | Método          | Descripción                                                                                             |
+| -------- | --------------- | ------------------------------------------------------------------------------------------------------- |
+| `/`      | `GET`           | Devuelve el **Panel Administrativo Web** embebido (`MicroserviceDB.html`)                               |
+| `/ws`    | `GET` (Upgrade) | **Endpoint WebSocket principal** por donde viajan todas las queries                                     |
+| `/event` | `POST`          | Endpoint de depuración del panel UI. Acepta JSON y lo loguea a nivel `debug`, devuelve `204 No Content` |
 
 ## 🔌 API WebSocket
 
@@ -264,33 +264,33 @@ Deserializa `response_json` para obtener el cuerpo de la operación (array de do
 
 Requieren `payload.collection_name` y `database_name` (por mensaje o global).
 
-| `function_name` | Payload (mínimo) | Salida (en `response_json`) |
-|--|--| |
-| `find` | `{ filter, options? }` — options: `sort, projection, limit, skip` | `Document[]` |
-| `findOne` | `{ filter?, options? }` | `Document \| null` |
-| `insertOne` | `{ document }` | `{ acknowledged, insertedId }` |
-| `updateOne` | `{ filter, update, upsert? }` | `{ acknowledged, matchedCount, modifiedCount, upsertedId? }` |
-| `replaceOne` | `{ filter, replacement, upsert? }` | idem `updateOne` |
-| `deleteOne` | `{ filter }` | `{ acknowledged, deletedCount }` |
-| `deleteMany` | `{ filter }` | `{ acknowledged, deletedCount }` |
-| `updateCollection` | `{ updates: [{ filter, update }…] }` | Lote de `updateOne` |
-| `exportCollection` | `{ format?: "json" }` | JSON serializado de todos los documentos |
-| `importCollection` | `{ data \| documents \| docs \| items: [...] }` | `{ insertedCount, errors? }` |
+| `function_name`    | Payload (mínimo)                                                  | Salida (en `response_json`)                                  |
+| ------------------ | ----------------------------------------------------------------- | ------------------------------------------------------------ |
+| `find`             | `{ filter, options? }` — options: `sort, projection, limit, skip` | `Document[]`                                                 |
+| `findOne`          | `{ filter?, options? }`                                           | `Document \| null`                                           |
+| `insertOne`        | `{ document }`                                                    | `{ acknowledged, insertedId }`                               |
+| `updateOne`        | `{ filter, update, upsert? }`                                     | `{ acknowledged, matchedCount, modifiedCount, upsertedId? }` |
+| `replaceOne`       | `{ filter, replacement, upsert? }`                                | idem `updateOne`                                             |
+| `deleteOne`        | `{ filter }`                                                      | `{ acknowledged, deletedCount }`                             |
+| `deleteMany`       | `{ filter }`                                                      | `{ acknowledged, deletedCount }`                             |
+| `updateCollection` | `{ updates: [{ filter, update }…] }`                              | Lote de `updateOne`                                          |
+| `exportCollection` | `{ format?: "json" }`                                             | JSON serializado de todos los documentos                     |
+| `importCollection` | `{ data \| documents \| docs \| items: [...] }`                   | `{ insertedCount, errors? }`                                 |
 
 ### Categoría `database`
 
 Requieren `database_name`.
 
-| `function_name` | Payload | Descripción |
-|--|--| |
-| `createDatabase` | `{ new_database_name, collection_name? }` | Crea la BD (y una colección inicial opcional) insertando un documento semilla. |
-| `deleteDatabase` | — | Elimina la base de datos y todas sus colecciones. |
-| `renameDatabase` | `{ new_database_name }` | Copia todas las colecciones al nuevo nombre y elimina la vieja. |
-| `createCollection` | `{ collection_name, validator? }` | Crea una colección nueva. |
-| `deleteCollection` | `{ collection_name }` | Elimina la colección y sus índices. |
-| `renameCollection` | `{ from, to }` | Renombra una colección dentro de la misma BD. |
-| `exportDatabase` | `{ format?: "json" }` | JSON `{ "<colección>": Document[] }` completo. |
-| `importDatabase` | `{ data: { "<colección>": Document[] } }` | Importa en masa todas las colecciones del payload. |
+| `function_name`    | Payload                                   | Descripción                                                                    |
+| ------------------ | ----------------------------------------- | ------------------------------------------------------------------------------ |
+| `createDatabase`   | `{ new_database_name, collection_name? }` | Crea la BD (y una colección inicial opcional) insertando un documento semilla. |
+| `deleteDatabase`   | —                                         | Elimina la base de datos y todas sus colecciones.                              |
+| `renameDatabase`   | `{ new_database_name }`                   | Copia todas las colecciones al nuevo nombre y elimina la vieja.                |
+| `createCollection` | `{ collection_name, validator? }`         | Crea una colección nueva.                                                      |
+| `deleteCollection` | `{ collection_name }`                     | Elimina la colección y sus índices.                                            |
+| `renameCollection` | `{ from, to }`                            | Renombra una colección dentro de la misma BD.                                  |
+| `exportDatabase`   | `{ format?: "json" }`                     | JSON `{ "<colección>": Document[] }` completo.                                 |
+| `importDatabase`   | `{ data: { "<colección>": Document[] } }` | Importa en masa todas las colecciones del payload.                             |
 
 ### Eventos (change-stream)
 
