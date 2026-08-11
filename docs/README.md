@@ -418,7 +418,7 @@ El binario resultante lleva embebido el panel administrativo y no requiere archi
 
 ## 📄 Licencia
 
-© Magnus Norgaard. Todos los derechos reservados. Consulta el documento PDF en [`docs/MicroserviceDB_v2.0.0.pdf`](docs/MicroserviceDB_v2.0.0.pdf) para términos de uso y distribución específicos.
+© Magnus Norgaard. Todos los derechos reservados. Consulta el documento PDF en [`MicroserviceDB_v2.0.0.pdf`](MicroserviceDB_v2.0.0.pdf) para términos de uso y distribución específicos.
 
 <div align="center">
 
