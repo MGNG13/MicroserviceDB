@@ -429,15 +429,11 @@ El binario resultante lleva embebido el panel administrativo y no requiere archi
 
 ## 📄 Licencia
 
-© Magnus Norgaard. Todos los derechos reservados. Consulta el documento PDF en [`MicroserviceDB_v2.0.0.pdf`](MicroserviceDB_v2.0.0.pdf) para términos de uso y distribución específicos.
+© Magnus Norgaard. Todos los derechos reservados. Consulta el documento PDF de la versión 2.0.0 (actualmente es la 1.0.0) en [`MicroserviceDB_v2.0.0.pdf`](MicroserviceDB_v2.0.0.pdf).
 
 <div align="center">
 
 Hecho por **[Magnus Norgaard (MGNG13)](https://github.com/MGNG13)** · Full-Stack Developer
-
-<a href="https://github.com/MGNG13/MicroserviceDB">
-  <img src="https://github-readme-stats-fast.vercel.app/api/pin/?username=MGNG13&repo=MicroserviceDB" alt="MicroserviceDB repo card" />
-</a>
 
 <sub>Si este proyecto te resulta útil, considera dejar una ⭐ en el repositorio.</sub>
 
