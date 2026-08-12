@@ -84,7 +84,7 @@ El binario resultante es único y autocontenido; el panel HTML se sirve desde el
 | ⚙️ **Runtime**            | Rust 1.80+, Tokio async runtime completo                            |
 | 🌐 **Servidor**           | Warp 0.3 con TLS nativo (rustls)                                    |
 | 🗄️ **Persistencia**       | MongoDB 7.x (driver oficial 3.x), compatible con sharded clusters   |
-| ⚡ **Caché**              | Redis / Dragonfly (opcional) — requests, documentos e índices       |
+| ⚡ **Caché**               | Redis / Dragonfly (opcional) — requests, documentos e índices       |
 | 🧠 **Auto-indexado**      | Monitoriza campos frecuentemente consultados y propone/crea índices |
 | 🔌 **Protocolo**          | WebSocket + JSON (principal) · HTTP POST `/event` (debug UI)        |
 | 🖥️ **Panel Web**          | SPA en `MicroserviceDB.html` embebida con `include_str!`            |
@@ -116,20 +116,20 @@ El binario resultante es único y autocontenido; el panel HTML se sirve desde el
                        ▼
 ┌──────────────────────────────────────────────────────────────┐
 │                 MicroserviceDB (Rust / Tokio)                │
-│  ┌────────────┐  ┌────────────┐  ┌────────────────────────┐ │
-│  │ Warp HTTP  │  │ Ws Router  │  │   Broadcast (tokio-    │ │
-│  │  + TLS     │  │            │  │      broadcast)        │ │
-│  └─────┬──────┘  └─────┬──────┘  └───────────┬────────────┘ │
-│        │               │                     │                │
-│  ┌─────┴───────────────┴─────────────────────┴────────────┐ │
-│  │                    Motor MongoDB                        │ │
-│  │  list · find · insert/update/delete · agg · admin ops  │ │
-│  └─────┬──────────────────────┬───────────────────────────┘ │
-│        │                      │                               │
-│  ┌─────┴──────┐         ┌─────┴──────────────────────────┐  │
-│  │ Caché L1   │         │  Auto-index manager            │  │
-│  │ Dragonfly  │         │  + Redis index manager         │  │
-│  └────────────┘         └────────────────────────────────┘  │
+│  ┌────────────┐  ┌────────────┐  ┌────────────────────────┐  │
+│  │ Warp HTTP  │  │ Ws Router  │  │   Broadcast (tokio-    │  │
+│  │  + TLS     │  │            │  │      broadcast)        │  │
+│  └─────┬──────┘  └─────┬──────┘  └───────────┬────────────┘  │
+│        │               │                     │               │
+│  ┌─────┴───────────────┴─────────────────────┴────────────┐  │
+│  │                    Motor MongoDB                       │  │
+│  │  list · find · insert/update/delete · agg · admin ops  │  │
+│  └─────┬──────────────────────┬───────────────────────────┘  │
+│        │                      │                              │
+│  ┌─────┴──────┐         ┌─────┴──────────────────────────┐   │
+│  │ Caché L1   │         │  Auto-index manager            │   │
+│  │ Dragonfly  │         │  + Redis index manager         │   │
+│  └────────────┘         └────────────────────────────────┘   │
 └──────────────────────┬───────────────────────────────────────┘
                        │
                        ▼
