@@ -15,7 +15,7 @@ use flate2::write::GzEncoder;
 use flate2::Compression;
 use futures::{SinkExt, StreamExt};
 use mongodb::{
-    bson::{doc, Document, Bson},
+    bson::{doc, Document},
     Client,
     IndexModel,
 };
@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Number, Value};
 use tokio::fs;
 use tokio::process::Command;
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::broadcast;
 use tokio::time::{sleep, Duration, interval};
 use warp::http::StatusCode;
 use warp::ws::{Message, WebSocket};
@@ -808,27 +808,7 @@ struct RedisDocumentCache {
 
 impl RedisDocumentCache {
     fn doc_key(&self, db: &str, collection: &str, doc_id: &str) -> String {
-        format!("{}:{}:{}:{}:{}", self.prefix, cache_key_segment(db), cache_key_segment(collection), cache_key_segment(doc_id))
-    }
-
-    /// Obtiene un documento individual por su _id desde Redis.
-    async fn get_doc(&self, db: &str, collection: &str, doc_id: &str) -> Option<Value> {
-        let mut conn = self.connection.clone();
-        let key = self.doc_key(db, collection, doc_id);
-        match conn.hgetall::<_, HashMap<String, String>>(&key).await {
-            Ok(map) if !map.is_empty() => {
-                let mut obj = Map::new();
-                for (k, v) in map {
-                    if let Ok(val) = serde_json::from_str::<Value>(&v) {
-                        obj.insert(k, val);
-                    } else {
-                        obj.insert(k, Value::String(v));
-                    }
-                }
-                Some(Value::Object(obj))
-            }
-            _ => None,
-        }
+        format!("{}:{}:{}:{}", self.prefix, cache_key_segment(db), cache_key_segment(collection), cache_key_segment(doc_id))
     }
 
     /// Guarda un documento individual en Redis como Hash.
@@ -1246,7 +1226,14 @@ impl QueryPlanAnalyzer {
                     max: num,
                 });
             }
-            return Some(IndexStrategy::TagExact {
+            // Valores array (tipo tags/multi-valor) usan TagExact
+            if value.is_array() {
+                return Some(IndexStrategy::TagExact {
+                    field: field.to_string(),
+                    value: json_to_string(value),
+                });
+            }
+            return Some(IndexStrategy::StringExact {
                 field: field.to_string(),
                 value: json_to_string(value),
             });
@@ -1264,7 +1251,14 @@ impl QueryPlanAnalyzer {
                                 max: num,
                             });
                         }
-                        return Some(IndexStrategy::TagExact {
+                        // $eq con array usa TagExact (coincidencia tag)
+                        if op_val.is_array() {
+                            return Some(IndexStrategy::TagExact {
+                                field: field.to_string(),
+                                value: json_to_string(op_val),
+                            });
+                        }
+                        return Some(IndexStrategy::StringExact {
                             field: field.to_string(),
                             value: json_to_string(op_val),
                         });
@@ -1312,6 +1306,19 @@ impl QueryPlanAnalyzer {
                                 field: field.to_string(),
                                 values,
                             });
+                        }
+                    }
+                    "$all" => {
+                        // $all: todos los valores deben estar presentes (interseccion de tags)
+                        // Para arrays pequeños usamos TagsAnd como aproximacion optimizada
+                        if let Some(arr) = op_val.as_array() {
+                            if !arr.is_empty() {
+                                let values: Vec<String> = arr.iter().map(json_to_string).collect();
+                                return Some(IndexStrategy::TagsAnd {
+                                    field: field.to_string(),
+                                    values,
+                                });
+                            }
                         }
                     }
                     _ => {}
@@ -1490,15 +1497,81 @@ impl AutoIndexManager {
         let exists_key = self.index_exists_key(db, collection, field);
         let _: Result<(), _> = conn.set(&exists_key, "1").await;
 
-        // 3. Indexar documentos existentes en Redis
+        // 3. Indexar documentos existentes en Redis detectando el tipo real
         if let Ok(database) = load_database(mongo, db).await {
             if let Some(docs) = database.collections.get(collection) {
-                let idx_type = IndexType::Tag; // Default a Tag por flexibilidad
+                let idx_type = Self::detect_index_type_for_field(docs, field);
+                log_line(
+                    LogLevel::Debug,
+                    "autoindex_detected_type",
+                    Some(json!({
+                        "database_name": db,
+                        "collection": collection,
+                        "field": field,
+                        "index_type": format!("{:?}", idx_type)
+                    })),
+                );
                 for doc in docs {
                     index_mgr.index_document(db, collection, doc, &[(field.to_string(), idx_type.clone())]).await;
                 }
             }
         }
+    }
+
+    /// Detecta el mejor IndexType para un campo dado analizando documentos existentes.
+    fn detect_index_type_for_field(docs: &[Value], field: &str) -> IndexType {
+        use std::collections::HashSet;
+        let mut numeric_count = 0usize;
+        let mut string_count = 0usize;
+        let mut array_count = 0usize;
+        let mut object_count = 0usize;
+        let mut total = 0usize;
+        let mut string_values = HashSet::new();
+        let mut has_duplicates = false;
+
+        for doc in docs.iter().take(500) {
+            if let Some(val) = get_nested_value(doc, field) {
+                total += 1;
+                match val {
+                    Value::Number(_) => numeric_count += 1,
+                    Value::String(s) => {
+                        string_count += 1;
+                        if !string_values.insert(s.clone()) {
+                            has_duplicates = true;
+                        }
+                    }
+                    Value::Array(_) => array_count += 1,
+                    Value::Object(_) => object_count += 1,
+                    _ => {}
+                }
+            }
+        }
+
+        if total == 0 {
+            return IndexType::Tag;
+        }
+
+        // Campo mayormente numérico → índice Numeric (ZSET ordenado por score)
+        if numeric_count * 10 >= total * 8 {
+            return IndexType::Numeric;
+        }
+
+        // Campo con arrays (tags) → Tag (índice SET flexible)
+        if array_count > 0 {
+            return IndexType::Tag;
+        }
+
+        // Campo de strings únicos sin duplicados → String (SET único, más eficiente)
+        if string_count * 10 >= total * 7 && !has_duplicates {
+            return IndexType::String;
+        }
+
+        // Campo mixto o compuesto → Compound (usa hash como score en ZSET)
+        if (numeric_count > 0 && string_count > 0) || object_count > 0 {
+            return IndexType::Compound;
+        }
+
+        IndexType::Tag
     }
 
     /// Elimina índices que no se han usado en el período configurado.
@@ -1594,6 +1667,91 @@ impl AutoIndexManager {
         let last_key = self.last_used_key(db, collection, field);
         let _: Result<(), _> = redis::cmd("DEL").arg(&exists_key).arg(&stats_key).arg(&last_key).query_async(&mut conn).await;
     }
+}
+
+/// Extrae los nombres de campo top-level únicos presentes en un sample de documentos.
+fn collect_unique_sample_fields(docs: &[Value], sample_limit: usize) -> Vec<String> {
+    use std::collections::HashSet;
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut ordered: Vec<String> = Vec::new();
+    for doc in docs.iter().take(sample_limit) {
+        if let Some(obj) = doc.as_object() {
+            for k in obj.keys() {
+                if !seen.contains(k) {
+                    seen.insert(k.clone());
+                    ordered.push(k.clone());
+                }
+            }
+        }
+    }
+    ordered
+}
+
+/// Reconstruye completamente los índices secundarios en Redis y repuebla el cache
+/// de documentos para una colección. Pensado para operaciones de import donde el
+/// estado de Redis puede quedar inconsistente respecto de MongoDB.
+async fn rebuild_collection_redis_state(
+    db_name: &str,
+    col_name: &str,
+    docs: &[Value],
+    index_mgr: &Option<RedisIndexManager>,
+    doc_cache: &Option<RedisDocumentCache>,
+) {
+    // 1. Invalidar + borrar todo lo existente
+    if let Some(idx) = index_mgr {
+        idx.drop_collection_indexes(db_name, col_name).await;
+    }
+    if let Some(cache) = doc_cache {
+        cache.invalidate_collection(db_name, col_name).await;
+    }
+
+    if docs.is_empty() {
+        return;
+    }
+
+    // 2. Detectar campos presentes en los docs y su mejor tipo de índice
+    let fields = collect_unique_sample_fields(docs, 1000);
+    let field_idx_types: Vec<(String, IndexType)> = fields
+        .iter()
+        .map(|f| (f.clone(), AutoIndexManager::detect_index_type_for_field(docs, f)))
+        .collect();
+
+    // 3. Reindexar cada documento con TODOS sus campos tipificados
+    if let Some(idx) = index_mgr {
+        log_line(
+            LogLevel::Info,
+            "rebuild_collection_indexes_start",
+            Some(json!({
+                "database_name": db_name,
+                "collection": col_name,
+                "documents": docs.len(),
+                "fields": fields.len()
+            })),
+        );
+        for doc in docs {
+            idx.index_document(db_name, col_name, doc, &field_idx_types).await;
+        }
+    }
+
+    // 4. Repoblar cache de documentos (hash individual por doc)
+    if let Some(cache) = doc_cache {
+        for doc in docs {
+            if let Some(id_val) = doc.get("_id") {
+                let id = json_to_string(id_val);
+                cache.set_doc(db_name, col_name, &id, doc).await;
+            }
+        }
+    }
+
+    log_line(
+        LogLevel::Info,
+        "rebuild_collection_indexes_done",
+        Some(json!({
+            "database_name": db_name,
+            "collection": col_name,
+            "documents": docs.len()
+        })),
+    );
 }
 
 // =============================================================================
@@ -3161,8 +3319,28 @@ async fn handle_database_action(
 
             save_database(mongo, db_name, &database).await?;
 
-            if let Some(cache) = doc_cache {
-                cache.invalidate_database(db_name).await;
+            // Invalidación completa y regeneración de estado Redis por colección
+            if doc_cache.is_some() || index_mgr.is_some() {
+                // En modo replace, invalidamos TAMBIEN db-level para cubrir colecciones
+                // que ya no existen en el payload.
+                if mode != "merge" {
+                    if let Some(cache) = doc_cache {
+                        cache.invalidate_database(db_name).await;
+                    }
+                }
+                // Reconstruimos estado Redis de cada coleccion resultante
+                for (col_name, docs) in &database.collections {
+                    if is_reserved_collection(col_name) {
+                        continue;
+                    }
+                    rebuild_collection_redis_state(
+                        db_name,
+                        col_name,
+                        docs,
+                        index_mgr,
+                        doc_cache,
+                    ).await;
+                }
             }
 
             emitter.emit(
@@ -3228,37 +3406,51 @@ async fn resolve_docs_redis_first(
         }
     }
 
+    // Optimizacion: si el plan determino explicitamente fallback a Mongo
+    // y no tenemos cache/indices, saltarse directamente a MongoDB.
+    if plan.fallback_to_mongo && !plan.can_use_redis {
+        log_line(
+            LogLevel::Debug,
+            "query_plan_fallback_mongo",
+            Some(json!({
+                "database_name": db_name,
+                "collection": col_name,
+                "strategy": format!("{:?}", plan.index_strategy)
+            })),
+        );
+    }
+
     if plan.can_use_redis {
         if let (Some(cache), Some(idx_mgr)) = (doc_cache, index_mgr) {
-            let doc_ids = match plan.index_strategy {
-                IndexStrategy::PrimaryKeyLookup { id } => vec![id],
+            let doc_ids = match &plan.index_strategy {
+                IndexStrategy::PrimaryKeyLookup { id } => vec![id.clone()],
                 IndexStrategy::NumericRange { field, min, max } => {
-                    idx_mgr.query_numeric_range(db_name, col_name, &field, min, max).await
+                    idx_mgr.query_numeric_range(db_name, col_name, field, *min, *max).await
                 }
                 IndexStrategy::TagExact { field, value } => {
-                    idx_mgr.query_tag(db_name, col_name, &field, &value).await
+                    idx_mgr.query_tag(db_name, col_name, field, value).await
                 }
                 IndexStrategy::StringExact { field, value } => {
-                    idx_mgr.query_string(db_name, col_name, &field, &value)
+                    idx_mgr.query_string(db_name, col_name, field, value)
                         .await
                         .map(|id| vec![id])
                         .unwrap_or_default()
                 }
                 IndexStrategy::TagsAnd { field, values } => {
-                    idx_mgr.query_tags_and(db_name, col_name, &field, &values).await
+                    idx_mgr.query_tags_and(db_name, col_name, field, values).await
                 }
                 IndexStrategy::Composite(strategies) => {
                     let mut all_ids: Vec<Vec<String>> = Vec::new();
                     for s in strategies {
                         let ids = match s {
                             IndexStrategy::NumericRange { field, min, max } => {
-                                idx_mgr.query_numeric_range(db_name, col_name, &field, min, max).await
+                                idx_mgr.query_numeric_range(db_name, col_name, field, *min, *max).await
                             }
                             IndexStrategy::TagExact { field, value } => {
-                                idx_mgr.query_tag(db_name, col_name, &field, &value).await
+                                idx_mgr.query_tag(db_name, col_name, field, value).await
                             }
                             IndexStrategy::StringExact { field, value } => {
-                                idx_mgr.query_string(db_name, col_name, &field, &value)
+                                idx_mgr.query_string(db_name, col_name, field, value)
                                     .await
                                     .map(|id| vec![id])
                                     .unwrap_or_default()
@@ -3307,10 +3499,68 @@ async fn resolve_docs_redis_first(
                         "database_name": db_name,
                         "collection": col_name,
                         "strategy": format!("{:?}", plan.index_strategy),
-                        "matched_docs": result.len()
+                        "matched_docs": result.len(),
+                        "fallback_to_mongo": plan.fallback_to_mongo
                     })),
                 );
                 return Ok(result);
+            } else {
+                // Fallback cruzado: si la estrategia principal no devolvio IDs,
+                // intentar la estrategia alternativa para el mismo tipo de consulta
+                // (StringExact ↔ TagExact) por incoherencias entre tipo de indice y planificador.
+                let fallback_ids = match &plan.index_strategy {
+                    IndexStrategy::StringExact { field, value } => {
+                        Some(idx_mgr.query_tag(db_name, col_name, field, value).await)
+                    }
+                    IndexStrategy::TagExact { field, value } => {
+                        idx_mgr.query_string(db_name, col_name, field, value)
+                            .await
+                            .map(|id| vec![id])
+                    }
+                    _ => None,
+                };
+
+                if let Some(fallback_ids) = fallback_ids {
+                    if !fallback_ids.is_empty() {
+                        log_line(
+                            LogLevel::Debug,
+                            "redis_index_cross_fallback_hit",
+                            Some(json!({
+                                "database_name": db_name,
+                                "collection": col_name,
+                                "strategy": format!("{:?}", plan.index_strategy)
+                            })),
+                        );
+                        let docs = cache.mget_docs(db_name, col_name, &fallback_ids).await;
+                        let mut matched: Vec<Value> = docs.into_iter().flatten().collect();
+                        matched.retain(|d| match_filter(d, filter));
+
+                        if let Some(s) = sort {
+                            sort_docs(&mut matched, s);
+                        }
+                        let mut result: Vec<Value> = if let Some(lim) = limit {
+                            matched.into_iter().skip(skip).take(lim).collect()
+                        } else {
+                            matched.into_iter().skip(skip).collect()
+                        };
+                        if let Some(p) = projection {
+                            result = result.into_iter().map(|d| apply_projection(&d, p)).collect();
+                        }
+                        return Ok(result);
+                    }
+                }
+
+                if !plan.fallback_to_mongo {
+                    log_line(
+                        LogLevel::Debug,
+                        "redis_index_query_miss_empty_ids",
+                        Some(json!({
+                            "database_name": db_name,
+                            "collection": col_name,
+                            "strategy": format!("{:?}", plan.index_strategy)
+                        })),
+                    );
+                }
             }
         }
     }
@@ -3411,7 +3661,7 @@ async fn handle_collection_action(
             let sort = payload.get("sort").cloned();
             let projection = payload.get("projection").cloned();
 
-            let mut result_docs = resolve_docs_redis_first(
+            let result_docs = resolve_docs_redis_first(
                 mongo,
                 doc_cache,
                 index_mgr,
@@ -4003,52 +4253,47 @@ async fn handle_collection_action(
             }
 
             let mut db = load_database(mongo, db_name).await?;
-            let docs = db
-                .collections
-                .entry(col_name.to_string())
-                .or_insert_with(Vec::new);
             let mut inserted = 0usize;
             let mut updated = 0usize;
+            {
+                let docs = db
+                    .collections
+                    .entry(col_name.to_string())
+                    .or_insert_with(Vec::new);
 
-            if let Some(idx_mgr) = index_mgr {
-                idx_mgr.drop_collection_indexes(db_name, col_name).await;
-            }
-            if let Some(cache) = doc_cache {
-                cache.invalidate_collection(db_name, col_name).await;
-            }
-
-            match mode {
-                "replace" => {
-                    let mut new_docs = Vec::with_capacity(arr.len());
-                    for raw in arr {
-                        new_docs.push(raw.clone());
+                match mode {
+                    "replace" => {
+                        let mut new_docs = Vec::with_capacity(arr.len());
+                        for raw in arr {
+                            new_docs.push(raw.clone());
+                        }
+                        inserted = new_docs.len();
+                        *docs = new_docs;
                     }
-                    inserted = new_docs.len();
-                    *docs = new_docs;
-                }
-                "append" => {
-                    for raw in arr {
-                        docs.push(raw.clone());
-                        inserted += 1;
+                    "append" => {
+                        for raw in arr {
+                            docs.push(raw.clone());
+                            inserted += 1;
+                        }
                     }
-                }
-                _ => {
-                    for raw in arr {
-                        match raw.get("_id").cloned() {
-                            Some(id) => {
-                                if let Some(idx) =
-                                    docs.iter().position(|x| value_eq(x.get("_id"), Some(&id)))
-                                {
-                                    docs[idx] = raw.clone();
-                                    updated += 1;
-                                } else {
+                    _ => {
+                        for raw in arr {
+                            match raw.get("_id").cloned() {
+                                Some(id) => {
+                                    if let Some(idx) =
+                                        docs.iter().position(|x| value_eq(x.get("_id"), Some(&id)))
+                                    {
+                                        docs[idx] = raw.clone();
+                                        updated += 1;
+                                    } else {
+                                        docs.push(raw.clone());
+                                        inserted += 1;
+                                    }
+                                }
+                                None => {
                                     docs.push(raw.clone());
                                     inserted += 1;
                                 }
-                            }
-                            None => {
-                                docs.push(raw.clone());
-                                inserted += 1;
                             }
                         }
                     }
@@ -4057,19 +4302,16 @@ async fn handle_collection_action(
 
             save_database(mongo, db_name, &db).await?;
 
-            if let Some(idx_mgr) = index_mgr {
-                let idx_defs = vec![(String::from("_id"), IndexType::Tag)];
-                for doc in docs.iter() {
-                    idx_mgr.index_document(db_name, col_name, doc, &idx_defs).await;
-                }
-            }
-            if let Some(cache) = doc_cache {
-                for doc in docs.iter() {
-                    if let Some(id_val) = doc.get("_id") {
-                        cache.set_doc(db_name, col_name, &json_to_string(id_val), doc).await;
-                    }
-                }
-            }
+            // Reconstruccion full de indices + cache (drop + reindexa TODOS los campos + popula cache)
+            // para garantizar estado Redis 100% consistente con MongoDB despues del import.
+            let final_docs = db.collections.get(col_name).map(|v| v.as_slice()).unwrap_or(&[]);
+            rebuild_collection_redis_state(
+                db_name,
+                col_name,
+                final_docs,
+                index_mgr,
+                doc_cache,
+            ).await;
 
             emitter.emit(
                 "collection",
@@ -4765,7 +5007,7 @@ async fn main() {
     let index = warp::path::end().map(|| {
         warp::reply::html(include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/index.html"
+            "/MicroserviceDB.html"
         )))
     });
 

@@ -1,0 +1,284 @@
+services:
+  # ============================================================
+  # CONFIG SERVER REPLICA SET
+  # ============================================================
+  config1:
+    image: mongo:latest
+    container_name: config1
+    hostname: config1
+    command:
+      - mongod
+      - --configsvr
+      - --replSet
+      - configRS
+      - --port
+      - "27019"
+      - --bind_ip_all
+    volumes:
+      - config1:/data/db
+    networks:
+      - mongo-cluster
+  config2:
+    image: mongo:latest
+    container_name: config2
+    hostname: config2
+    command:
+      - mongod
+      - --configsvr
+      - --replSet
+      - configRS
+      - --port
+      - "27019"
+      - --bind_ip_all
+    volumes:
+      - config2:/data/db
+    networks:
+      - mongo-cluster
+  config3:
+    image: mongo:latest
+    container_name: config3
+    hostname: config3
+    command:
+      - mongod
+      - --configsvr
+      - --replSet
+      - configRS
+      - --port
+      - "27019"
+      - --bind_ip_all
+    volumes:
+      - config3:/data/db
+    networks:
+      - mongo-cluster
+  # ============================================================
+  # SHARD 1 - 3 NODE REPLICA SET
+  # ============================================================
+  shard1a:
+    image: mongo:latest
+    container_name: shard1a
+    hostname: shard1a
+    command:
+      - mongod
+      - --shardsvr
+      - --replSet
+      - shard1RS
+      - --port
+      - "27018"
+      - --bind_ip_all
+    ports:
+      - "27101:27018"
+    volumes:
+      - shard1a:/data/db
+    networks:
+      - mongo-cluster
+  shard1b:
+    image: mongo:latest
+    container_name: shard1b
+    hostname: shard1b
+    command:
+      - mongod
+      - --shardsvr
+      - --replSet
+      - shard1RS
+      - --port
+      - "27018"
+      - --bind_ip_all
+    volumes:
+      - shard1b:/data/db
+    networks:
+      - mongo-cluster
+  shard1c:
+    image: mongo:latest
+    container_name: shard1c
+    hostname: shard1c
+    command:
+      - mongod
+      - --shardsvr
+      - --replSet
+      - shard1RS
+      - --port
+      - "27018"
+      - --bind_ip_all
+    volumes:
+      - shard1c:/data/db
+    networks:
+      - mongo-cluster
+  # ============================================================
+  # SHARD 2 - 3 NODE REPLICA SET
+  # ============================================================
+  shard2a:
+    image: mongo:latest
+    container_name: shard2a
+    hostname: shard2a
+    command:
+      - mongod
+      - --shardsvr
+      - --replSet
+      - shard2RS
+      - --port
+      - "27018"
+      - --bind_ip_all
+    ports:
+      - "27102:27018"
+    volumes:
+      - shard2a:/data/db
+    networks:
+      - mongo-cluster
+  shard2b:
+    image: mongo:latest
+    container_name: shard2b
+    hostname: shard2b
+    command:
+      - mongod
+      - --shardsvr
+      - --replSet
+      - shard2RS
+      - --port
+      - "27018"
+      - --bind_ip_all
+    volumes:
+      - shard2b:/data/db
+    networks:
+      - mongo-cluster
+  shard2c:
+    image: mongo:latest
+    container_name: shard2c
+    hostname: shard2c
+    command:
+      - mongod
+      - --shardsvr
+      - --replSet
+      - shard2RS
+      - --port
+      - "27018"
+      - --bind_ip_all
+    volumes:
+      - shard2c:/data/db
+    networks:
+      - mongo-cluster
+  # ============================================================
+  # SHARD 3 - 3 NODE REPLICA SET
+  # ============================================================
+  shard3a:
+    image: mongo:latest
+    container_name: shard3a
+    hostname: shard3a
+    command:
+      - mongod
+      - --shardsvr
+      - --replSet
+      - shard3RS
+      - --port
+      - "27018"
+      - --bind_ip_all
+    ports:
+      - "27103:27018"
+    volumes:
+      - shard3a:/data/db
+    networks:
+      - mongo-cluster
+  shard3b:
+    image: mongo:latest
+    container_name: shard3b
+    hostname: shard3b
+    command:
+      - mongod
+      - --shardsvr
+      - --replSet
+      - shard3RS
+      - --port
+      - "27018"
+      - --bind_ip_all
+    volumes:
+      - shard3b:/data/db
+    networks:
+      - mongo-cluster
+  shard3c:
+    image: mongo:latest
+    container_name: shard3c
+    hostname: shard3c
+    command:
+      - mongod
+      - --shardsvr
+      - --replSet
+      - shard3RS
+      - --port
+      - "27018"
+      - --bind_ip_all
+    volumes:
+      - shard3c:/data/db
+    networks:
+      - mongo-cluster
+  # ============================================================
+  # MONGOS ROUTER
+  # ============================================================
+  mongos:
+    image: mongo:latest
+    container_name: mongos
+    hostname: mongos
+    command:
+      - mongos
+      - --configdb
+      - configRS/config1:27019,config2:27019,config3:27019
+      - --bind_ip_all
+      - --port
+      - "27017"
+    ports:
+      - "27017:27017"
+    depends_on:
+      - config1
+      - config2
+      - config3
+      - shard1a
+      - shard1b
+      - shard1c
+      - shard2a
+      - shard2b
+      - shard2c
+      - shard3a
+      - shard3b
+      - shard3c
+    networks:
+      - mongo-cluster
+  # ============================================================
+  # DRAGONFLY
+  # ============================================================
+  dragonfly:
+    image: docker.dragonflydb.io/dragonflydb/dragonfly:latest
+    container_name: dragonfly
+    hostname: dragonfly
+    command:
+      - --dbnum=1
+      - --cache_mode
+      - --maxmemory=4gb
+      - --proactor_threads=4
+    ports:
+      - "6379:6379"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    networks:
+      - mongo-cluster
+# ==============================================================
+# VOLUMES
+# ==============================================================
+volumes:
+  config1:
+  config2:
+  config3:
+  shard1a:
+  shard1b:
+  shard1c:
+  shard2a:
+  shard2b:
+  shard2c:
+  shard3a:
+  shard3b:
+  shard3c:
+# ==============================================================
+# NETWORK
+# ==============================================================
+networks:
+  mongo-cluster:
+    driver: bridge

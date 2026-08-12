@@ -177,8 +177,8 @@ cargo run --release
 git clone https://github.com/MGNG13/MicroserviceDB.git
 cd MicroserviceDB
 cargo build --release
-# El binario queda en target/release/json-db-server[.exe]
-./target/release/json-db-server --backup
+# El binario queda en target/release/microservice-db[.exe]
+./target/release/microservice-db --backup
 ```
 
 ## ⚙️ Configuración
@@ -202,7 +202,7 @@ Edita el archivo `.env` en la raíz del proyecto (se carga con `dotenvy`). Todas
 ### CLI
 
 ```
-json-db-server [--backup]
+microservice-db [--backup]
 
   --backup   Habilita el ciclo de backups automáticos cada N minutos.
              Requiere MICROSERVICEDB_BACKUP_DIR y 7z disponible.
