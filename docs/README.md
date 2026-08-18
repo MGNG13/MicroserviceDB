@@ -54,6 +54,7 @@ Servidor de base de datos JSON escrito íntegramente en <strong>Rust asíncrono<
    - [Con Docker Compose (recomendado)](#con-docker-compose-recomendado)
    - [Desde fuente](#desde-fuente)
 7. [⚙️ Configuración](#️-configuración)
+   - [Credenciales MongoDB](#credenciales-mongodb)
    - [Variables de Entorno](#variables-de-entorno)
    - [CLI](#cli)
 8. [🌐 Endpoints HTTP](#-endpoints-http)
@@ -194,13 +195,30 @@ cargo build --release
 
 ## ⚙️ Configuración
 
+### Credenciales MongoDB
+
+Credenciales por defecto del cluster MongoDB incluido en el `docker-compose.yml`:
+
+| Campo          | Valor                       |
+| -------------- | --------------------------- |
+| **Usuario**    | `admin`                     |
+| **Contraseña** | `MicroserviceDB2026_MGNG13` |
+
+URI de conexión resultante:
+
+```
+mongodb://admin:MicroserviceDB2026_MGNG13@localhost:27017,localhost:27020/?authSource=admin
+```
+
+> ⚠️ Estas credenciales son para entornos de desarrollo. Cámbialas en producción.
+
 ### Variables de Entorno
 
 Edita el archivo `.env` en la raíz del proyecto (se carga con `dotenvy`). Todas las variables están prefijadas con `MICROSERVICEDB_` excepto los TTL de caché.
 
 | Variable                              | Obligatoria      | Default                       | Descripción                                                                        |
 | ------------------------------------- | ---------------- | ----------------------------- | ---------------------------------------------------------------------------------- |
-| `MICROSERVICEDB_MONGODB_URI`          | ✅               | `mongodb://127.0.0.1:27017/…` | URI de MongoDB (standalone, replSet o sharded `mongodb://mongos`)                  |
+| `MICROSERVICEDB_MONGODB_URI`          | ✅               | `mongodb://admin:MicroserviceDB2026_MGNG13@localhost:27017,localhost:27020/?authSource=admin` | URI de MongoDB (standalone, replSet o sharded `mongodb://mongos`)                  |
 | `MICROSERVICEDB_DRAGONFLY_URL`        | ❌               | —                             | URL de Redis/Dragonfly. Sin ella, la caché se desactiva pero el servidor funciona. |
 | `MICROSERVICEDB_PORT`                 | ❌               | `3329`                        | Puerto HTTP / WebSocket                                                            |
 | `MICROSERVICEDB_LOG_LEVEL`            | ❌               | `info`                        | `error \| warn \| info \| debug \| trace`                                          |
