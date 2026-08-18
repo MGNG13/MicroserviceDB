@@ -1,9 +1,35 @@
+x-mongo-shard: &mongo-shard
+  image: mongo:8.0
+  restart: unless-stopped
+  init: true
+  mem_limit: ${MONGO_MEM_LIMIT:-4g}
+  cpus: "${MONGO_CPUS:-2.0}"
+  ulimits:
+    nofile:
+      soft: 64000
+      hard: 64000
+  networks:
+    - mongo-cluster
+  stop_grace_period: 60s
+x-mongo-config: &mongo-config
+  image: mongo:8.0
+  restart: unless-stopped
+  init: true
+  mem_limit: 1g
+  cpus: "1.0"
+  ulimits:
+    nofile:
+      soft: 32000
+      hard: 32000
+  networks:
+    - mongo-cluster
+  stop_grace_period: 60s
 services:
   # ============================================================
-  # CONFIG SERVER REPLICA SET
+  # CONFIG SERVER REPLICA SET - 3 NODES
   # ============================================================
   config1:
-    image: mongo:latest
+    <<: *mongo-config
     container_name: config1
     hostname: config1
     command:
@@ -14,12 +40,18 @@ services:
       - --port
       - "27019"
       - --bind_ip_all
+      - --wiredTigerCacheSizeGB
+      - "0.5"
     volumes:
       - config1:/data/db
-    networks:
-      - mongo-cluster
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --port 27019 --eval 'db.adminCommand({ ping: 1 }).ok' | grep 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
   config2:
-    image: mongo:latest
+    <<: *mongo-config
     container_name: config2
     hostname: config2
     command:
@@ -30,12 +62,18 @@ services:
       - --port
       - "27019"
       - --bind_ip_all
+      - --wiredTigerCacheSizeGB
+      - "0.5"
     volumes:
       - config2:/data/db
-    networks:
-      - mongo-cluster
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --port 27019 --eval 'db.adminCommand({ ping: 1 }).ok' | grep 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
   config3:
-    image: mongo:latest
+    <<: *mongo-config
     container_name: config3
     hostname: config3
     command:
@@ -46,15 +84,21 @@ services:
       - --port
       - "27019"
       - --bind_ip_all
+      - --wiredTigerCacheSizeGB
+      - "0.5"
     volumes:
       - config3:/data/db
-    networks:
-      - mongo-cluster
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --port 27019 --eval 'db.adminCommand({ ping: 1 }).ok' | grep 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
   # ============================================================
   # SHARD 1 - 3 NODE REPLICA SET
   # ============================================================
   shard1a:
-    image: mongo:latest
+    <<: *mongo-shard
     container_name: shard1a
     hostname: shard1a
     command:
@@ -65,14 +109,20 @@ services:
       - --port
       - "27018"
       - --bind_ip_all
+      - --wiredTigerCacheSizeGB
+      - "${MONGO_CACHE_GB:-2}"
     ports:
       - "27101:27018"
     volumes:
       - shard1a:/data/db
-    networks:
-      - mongo-cluster
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --port 27018 --eval 'db.adminCommand({ ping: 1 }).ok' | grep 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
   shard1b:
-    image: mongo:latest
+    <<: *mongo-shard
     container_name: shard1b
     hostname: shard1b
     command:
@@ -83,12 +133,18 @@ services:
       - --port
       - "27018"
       - --bind_ip_all
+      - --wiredTigerCacheSizeGB
+      - "${MONGO_CACHE_GB:-2}"
     volumes:
       - shard1b:/data/db
-    networks:
-      - mongo-cluster
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --port 27018 --eval 'db.adminCommand({ ping: 1 }).ok' | grep 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
   shard1c:
-    image: mongo:latest
+    <<: *mongo-shard
     container_name: shard1c
     hostname: shard1c
     command:
@@ -99,15 +155,21 @@ services:
       - --port
       - "27018"
       - --bind_ip_all
+      - --wiredTigerCacheSizeGB
+      - "${MONGO_CACHE_GB:-2}"
     volumes:
       - shard1c:/data/db
-    networks:
-      - mongo-cluster
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --port 27018 --eval 'db.adminCommand({ ping: 1 }).ok' | grep 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
   # ============================================================
   # SHARD 2 - 3 NODE REPLICA SET
   # ============================================================
   shard2a:
-    image: mongo:latest
+    <<: *mongo-shard
     container_name: shard2a
     hostname: shard2a
     command:
@@ -118,14 +180,20 @@ services:
       - --port
       - "27018"
       - --bind_ip_all
+      - --wiredTigerCacheSizeGB
+      - "${MONGO_CACHE_GB:-2}"
     ports:
       - "27102:27018"
     volumes:
       - shard2a:/data/db
-    networks:
-      - mongo-cluster
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --port 27018 --eval 'db.adminCommand({ ping: 1 }).ok' | grep 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
   shard2b:
-    image: mongo:latest
+    <<: *mongo-shard
     container_name: shard2b
     hostname: shard2b
     command:
@@ -136,12 +204,18 @@ services:
       - --port
       - "27018"
       - --bind_ip_all
+      - --wiredTigerCacheSizeGB
+      - "${MONGO_CACHE_GB:-2}"
     volumes:
       - shard2b:/data/db
-    networks:
-      - mongo-cluster
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --port 27018 --eval 'db.adminCommand({ ping: 1 }).ok' | grep 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
   shard2c:
-    image: mongo:latest
+    <<: *mongo-shard
     container_name: shard2c
     hostname: shard2c
     command:
@@ -152,15 +226,21 @@ services:
       - --port
       - "27018"
       - --bind_ip_all
+      - --wiredTigerCacheSizeGB
+      - "${MONGO_CACHE_GB:-2}"
     volumes:
       - shard2c:/data/db
-    networks:
-      - mongo-cluster
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --port 27018 --eval 'db.adminCommand({ ping: 1 }).ok' | grep 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
   # ============================================================
   # SHARD 3 - 3 NODE REPLICA SET
   # ============================================================
   shard3a:
-    image: mongo:latest
+    <<: *mongo-shard
     container_name: shard3a
     hostname: shard3a
     command:
@@ -171,14 +251,20 @@ services:
       - --port
       - "27018"
       - --bind_ip_all
+      - --wiredTigerCacheSizeGB
+      - "${MONGO_CACHE_GB:-2}"
     ports:
       - "27103:27018"
     volumes:
       - shard3a:/data/db
-    networks:
-      - mongo-cluster
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --port 27018 --eval 'db.adminCommand({ ping: 1 }).ok' | grep 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
   shard3b:
-    image: mongo:latest
+    <<: *mongo-shard
     container_name: shard3b
     hostname: shard3b
     command:
@@ -189,12 +275,18 @@ services:
       - --port
       - "27018"
       - --bind_ip_all
+      - --wiredTigerCacheSizeGB
+      - "${MONGO_CACHE_GB:-2}"
     volumes:
       - shard3b:/data/db
-    networks:
-      - mongo-cluster
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --port 27018 --eval 'db.adminCommand({ ping: 1 }).ok' | grep 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
   shard3c:
-    image: mongo:latest
+    <<: *mongo-shard
     container_name: shard3c
     hostname: shard3c
     command:
@@ -205,17 +297,31 @@ services:
       - --port
       - "27018"
       - --bind_ip_all
+      - --wiredTigerCacheSizeGB
+      - "${MONGO_CACHE_GB:-2}"
     volumes:
       - shard3c:/data/db
-    networks:
-      - mongo-cluster
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --port 27018 --eval 'db.adminCommand({ ping: 1 }).ok' | grep 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
   # ============================================================
-  # MONGOS ROUTER
+  # MONGOS ROUTERS - 2 INSTANCES
   # ============================================================
-  mongos:
-    image: mongo:latest
-    container_name: mongos
-    hostname: mongos
+  mongos1:
+    image: mongo:8.0
+    container_name: mongos1
+    hostname: mongos1
+    restart: unless-stopped
+    init: true
+    mem_limit: 1g
+    cpus: "1.5"
+    ulimits:
+      nofile:
+        soft: 64000
+        hard: 64000
     command:
       - mongos
       - --configdb
@@ -226,42 +332,106 @@ services:
     ports:
       - "27017:27017"
     depends_on:
-      - config1
-      - config2
-      - config3
-      - shard1a
-      - shard1b
-      - shard1c
-      - shard2a
-      - shard2b
-      - shard2c
-      - shard3a
-      - shard3b
-      - shard3c
+      config1:
+        condition: service_healthy
+      config2:
+        condition: service_healthy
+      config3:
+        condition: service_healthy
     networks:
       - mongo-cluster
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --port 27017 --eval 'db.adminCommand({ ping: 1 }).ok' | grep 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+  mongos2:
+    image: mongo:8.0
+    container_name: mongos2
+    hostname: mongos2
+    restart: unless-stopped
+    init: true
+    mem_limit: 1g
+    cpus: "1.5"
+    ulimits:
+      nofile:
+        soft: 64000
+        hard: 64000
+    command:
+      - mongos
+      - --configdb
+      - configRS/config1:27019,config2:27019,config3:27019
+      - --bind_ip_all
+      - --port
+      - "27017"
+    ports:
+      - "27020:27017"
+    depends_on:
+      config1:
+        condition: service_healthy
+      config2:
+        condition: service_healthy
+      config3:
+        condition: service_healthy
+    networks:
+      - mongo-cluster
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --port 27017 --eval 'db.adminCommand({ ping: 1 }).ok' | grep 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
   # ============================================================
-  # DRAGONFLY
+  # DRAGONFLY - CACHE ÚNICO
+  # Sin réplica: al estar en el mismo servidor físico no aporta
+  # nada — solo consume el doble de RAM y CPU.
+  #
+  # Flags de cache:
+  #   --dbnum=1             una sola base de datos (db 0); SELECT > 0 retorna error
+  #   --cache_mode          LRU eviction al alcanzar maxmemory
+  #   --maxmemory           límite interno; debe ser < mem_limit del
+  #                         contenedor para dejar headroom al proceso
+  #   --snapshot_cron=      deshabilita snapshots — cache puro,
+  #                         sin I/O de escritura a disco
+  #   --proactor_threads    un hilo por vCPU asignado
+  #   --tcp_keepalive       detecta conexiones muertas rápidamente
   # ============================================================
   dragonfly:
     image: docker.dragonflydb.io/dragonflydb/dragonfly:latest
     container_name: dragonfly
     hostname: dragonfly
+    restart: unless-stopped
+    mem_limit: ${DRAGONFLY_MEM_LIMIT:-8g}
+    cpus: "${DRAGONFLY_CPUS:-4.0}"
     command:
       - --dbnum=1
       - --cache_mode
-      - --maxmemory=4gb
-      - --proactor_threads=4
+      - --maxmemory=${DRAGONFLY_MAXMEMORY:-7gb}
+      - --proactor_threads=${DRAGONFLY_THREADS:-4}
+      - --snapshot_cron=
+      - --tcp_keepalive=60
     ports:
       - "6379:6379"
     ulimits:
       memlock:
         soft: -1
         hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
     networks:
       - mongo-cluster
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -p 6379 ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
 # ==============================================================
 # VOLUMES
+# Dragonfly no tiene volumen: cache puro sin persistencia.
+# Si necesitas warm restart agrega: dragonfly: y monta /data.
 # ==============================================================
 volumes:
   config1:
