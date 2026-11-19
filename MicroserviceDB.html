@@ -380,6 +380,42 @@
         .input:focus { background: var(--surface); border-color: var(--accent-line); box-shadow: 0 0 0 3px var(--accent-soft); }
         .field-label { font-size: 0.8rem; font-weight: 600; color: var(--ink-2); margin-bottom: 6px; display: block; }
         .help { font-size: 0.76rem; color: var(--ink-3); margin-top: 6px; line-height: 1.4; }
+        /* ---------- Índices ---------- */
+        .modal.wide { max-width: 920px; }
+        .idx-summary { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+        .idx-stat { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); font-size: 0.78rem; color: var(--ink-2); }
+        .idx-stat b { color: var(--ink); font-variant-numeric: tabular-nums; }
+        .idx-section { margin-bottom: 18px; }
+        .idx-section h4 { font-size: 0.8rem; font-weight: 700; color: var(--ink-2); text-transform: uppercase; letter-spacing: .04em; margin: 0 0 4px; display: flex; align-items: center; gap: 8px; }
+        .idx-section .help { margin: 0 0 10px; }
+        .idx-list { display: flex; flex-direction: column; gap: 8px; }
+        .idx-card { border: 1px solid var(--line); border-radius: 11px; padding: 11px 13px; background: var(--surface); }
+        .idx-card.auto { border-color: var(--info-soft); background: linear-gradient(0deg, var(--surface), var(--surface)) padding-box; }
+        .idx-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .idx-name { font-family: var(--mono); font-size: 0.86rem; font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
+        .idx-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-size: 0.7rem; font-weight: 650; border: 1px solid transparent; white-space: nowrap; }
+        .idx-badge.manual { background: var(--accent-soft); color: var(--accent); border-color: var(--accent-line); }
+        .idx-badge.system { background: var(--surface-3); color: var(--ink-2); border-color: var(--line); }
+        .idx-badge.auto { background: var(--info-soft); color: var(--info); border-color: rgba(47,109,181,0.28); }
+        .idx-badge.lock { background: transparent; color: var(--ink-3); border-color: var(--line); }
+        .idx-badge.opt { background: var(--surface-2); color: var(--ink-2); border-color: var(--line); }
+        .idx-badge.warn { background: rgba(178,115,19,0.10); color: var(--warning); border-color: rgba(178,115,19,0.28); }
+        .idx-keys { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+        .idx-key { font-family: var(--mono); font-size: 0.78rem; padding: 3px 8px; border-radius: 7px; background: var(--surface-2); border: 1px solid var(--line-2); color: var(--ink); }
+        .idx-key i { font-style: normal; color: var(--ink-3); margin-left: 4px; }
+        .idx-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 6px 14px; margin-top: 9px; font-size: 0.77rem; color: var(--ink-2); }
+        .idx-meta span b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+        .idx-pfe { margin-top: 8px; font-family: var(--mono); font-size: 0.74rem; color: var(--ink-2); background: var(--surface-2); border-radius: 7px; padding: 6px 8px; overflow-wrap: anywhere; }
+        .idx-empty { padding: 14px; border: 1px dashed var(--line); border-radius: 11px; font-size: 0.82rem; color: var(--ink-3); text-align: center; }
+        .idx-form { display: flex; flex-direction: column; gap: 14px; }
+        .idx-key-row { display: grid; grid-template-columns: 1fr 150px 34px; gap: 8px; align-items: center; margin-bottom: 8px; }
+        .idx-key-row select, .idx-opts select { height: 40px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-2); padding: 0 10px; font-family: inherit; font-size: 0.86rem; color: var(--ink); }
+        .idx-opts { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+        .idx-check { display: flex; align-items: center; gap: 8px; font-size: 0.86rem; color: var(--ink); cursor: pointer; }
+        .idx-check input { width: 16px; height: 16px; accent-color: var(--accent); }
+        .idx-form textarea.input { height: auto; min-height: 70px; padding: 10px 13px; font-family: var(--mono); font-size: 0.8rem; resize: vertical; }
+        .idx-preview { font-family: var(--mono); font-size: 0.78rem; background: var(--surface-2); border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px; color: var(--ink-2); overflow-wrap: anywhere; }
+        @media (max-width: 560px) { .idx-key-row { grid-template-columns: 1fr 110px 34px; } }
         .toasts { position: fixed; bottom: 18px; right: 18px; z-index: 11000; display: flex; flex-direction: column; gap: 8px; }
         .toast { background: var(--ink); color: #fff; padding: 11px 15px; border-radius: 10px; font-size: 0.84rem; font-weight: 600; box-shadow: var(--shadow-pop); display: flex; align-items: center; gap: 9px; animation: toastIn .2s ease; max-width: 360px; }
         .toast.err { background: var(--danger); }
@@ -398,8 +434,8 @@
         .activity-head .a-tools { display: flex; align-items: center; gap: 6px; }
         .activity-list { flex: 1 1 auto; overflow-y: auto; padding: 10px 12px 24px; display: flex; flex-direction: column; gap: 8px; }
         .act-empty { color: var(--ink-3); font-size: 0.84rem; text-align: center; padding: 40px 16px; font-style: italic; }
-        .activity-list > .mini-pager { margin-top: 6px; border-top: none; padding: 0; }
-        .act-item { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--surface); }
+        .activity-list > .mini-pager { flex: 0 0 auto; margin-top: 6px; border-top: none; padding: 0; }
+        .act-item { flex: 0 0 auto; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--surface); }
         .act-item.external { border-color: var(--info-soft); box-shadow: 0 0 0 2px var(--info-soft); }
         .act-top { display: flex; align-items: center; gap: 8px; padding: 9px 11px; cursor: pointer; }
         .act-top:hover { background: var(--surface-2); }
@@ -500,6 +536,7 @@
                     </div>
                     <span class="col-meta" id="col-meta"></span>
                     <span class="spacer"></span>
+                    <button class="btn" onclick="App.openIndexes(App.sel.db, App.sel.col)" title="Ver y crear índices"><svg class="ic-svg" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="M10.8 12.2 20 3"/><path d="M16.5 6.5 19 9"/><path d="M14 9l2 2"/></svg> Índices</button>
                     <button class="btn primary" onclick="App.insertDocument()"><svg class="ic-svg" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg> Insertar documento</button>
                     <button class="btn ghost" id="col-kebab" title="Acciones de colección"><svg class="ic-svg" viewBox="0 0 24 24" width="18" height="18" fill="currentColor" stroke="none"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button>
                 </div>
@@ -965,9 +1002,23 @@
             payload: { database_name: dbName, collectionName, ...(extra || {}) }
         });
     }
+    // API key: se pide una vez y se guarda solo en esta pestaña (sessionStorage).
+    const API_KEY_STORAGE = 'microservicedb.apiKey';
+    function getApiKey(forcePrompt) {
+        let key = '';
+        try { key = sessionStorage.getItem(API_KEY_STORAGE) || ''; } catch { /* sin storage */ }
+        if (!key || forcePrompt) {
+            key = (window.prompt(forcePrompt ? 'API key rechazada o ausente. Introduce la API key de MicroserviceDB:' : 'API key de MicroserviceDB:') || '').trim();
+            try { if (key) sessionStorage.setItem(API_KEY_STORAGE, key); } catch { /* sin storage */ }
+        }
+        return key;
+    }
+    let apiKey = getApiKey(false);
     function connect() {
-        ws = new WebSocket(wsUrl);
+        let opened = false;
+        ws = new WebSocket(apiKey ? `${wsUrl}?api_key=${encodeURIComponent(apiKey)}` : wsUrl);
         ws.onopen = () => {
+            opened = true;
             document.getElementById('ws-dot').classList.add('on');
             document.getElementById('ws-text').textContent = 'Conectado';
             App.refresh();
@@ -991,6 +1042,8 @@
             document.getElementById('ws-dot').classList.remove('on');
             document.getElementById('ws-text').textContent = 'Reconectando…';
             rejectAllPending(new Error('WebSocket desconectado'));
+            // Si nunca llegó a abrir, lo más probable es una key inválida (HTTP 401).
+            if (!opened) apiKey = getApiKey(true);
             setTimeout(connect, 3000);
         };
     }
@@ -1020,6 +1073,10 @@
         sortAsc: '<path d="M6 15l6-6 6 6"/>',
         sortDesc: '<path d="M6 9l6 6 6-6"/>',
         filter: '<path d="M3 5h18l-7 8v6l-4-2v-4z"/>',
+        key: '<circle cx="8" cy="15" r="4"/><path d="M10.8 12.2 20 3"/><path d="M16.5 6.5 19 9"/><path d="M14 9l2 2"/>',
+        lock: '<rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/>',
+        bolt: '<path d="M13 2.5 4.5 13.5H11l-1 8 8.5-11H12l1-8Z"/>',
+        x: '<path d="M6 6l12 12M18 6 6 18"/>',
     };
     const ICON_FILLED = new Set(['dots']);
     function svgIcon(name, size) {
@@ -1468,9 +1525,25 @@
                 for (const k of Array.from(this.colsByDb.keys())) if (!this.dbs.includes(k)) this.colsByDb.delete(k);
                 for (const k of Array.from(this.openDbs)) if (!this.dbs.includes(k)) this.openDbs.delete(k);
                 if (this.sel.db && !this.dbs.includes(this.sel.db)) this.closeWorkspace();
-                for (const db of this.openDbs) if (!this.colsByDb.has(db) && !this.loadingByDb.has(db)) this.ensureCols(db);
                 this.renderTree();
+                // Se vuelven a pedir las colecciones de cada base abierta; la lista anterior
+                // sigue visible hasta que llega la nueva (sin parpadeo).
+                await Promise.all(Array.from(this.openDbs).map((db) => this.reloadCols(db)));
             } catch (e) { toast('No se pudieron cargar las bases de datos: ' + e.message, 'err'); }
+        },
+        async reloadCols(db) {
+            if (this.loadingByDb.has(db)) return this.loadingByDb.get(db);
+            const p = (async () => {
+                const cols = await sendAndWait({ type: 'list_collections', database_name: db });
+                const list = visibleCollectionNames(cols);
+                this.colsByDb.set(db, list);
+                this.errorByDb.delete(db);
+                return list;
+            })();
+            this.loadingByDb.set(db, p);
+            p.catch((e) => { if (!this.colsByDb.has(db)) { this.errorByDb.set(db, e.message || 'Error'); this.colsByDb.set(db, []); } })
+             .finally(() => { this.loadingByDb.delete(db); this.renderTree(); });
+            return p.catch(() => []);
         },
         ensureCols(db) {
             if (this.colsByDb.has(db)) return Promise.resolve(this.colsByDb.get(db));
@@ -1589,7 +1662,7 @@
             });
             // #endregion
             if (this.openDbs.has(db)) { if (!alsoSelect) this.openDbs.delete(db); }
-            else { this.openDbs.add(db); this.ensureCols(db); }
+            else { this.openDbs.add(db); if (this.colsByDb.has(db)) this.reloadCols(db); else this.ensureCols(db); }
             if (alsoSelect) { this.openDbs.add(db); this.ensureCols(db); }
             this.renderTree();
         },
@@ -1622,6 +1695,7 @@
             Menu.open(r.left, r.bottom + 4, [
                 { icon: 'refresh', label: 'Abrir / refrescar', onClick: () => this.openCollection(db, col) },
                 { icon: 'plus', label: 'Insertar documento', onClick: () => { this.openCollection(db, col); setTimeout(() => this.insertDocument(), 50); } },
+                { icon: 'key', label: 'Índices…', onClick: () => this.openIndexes(db, col) },
                 { sep: true },
                 { icon: 'download', label: 'Exportar colección', onClick: () => this.exportCollection(db, col) },
                 { icon: 'upload', label: 'Importar a colección…', onClick: () => this.importCollectionPrompt(db, col) },
@@ -1637,6 +1711,7 @@
             if (isReservedCollectionName(col)) return;
             Menu.open(r.right - 220, r.bottom + 4, [
                 { icon: 'refresh', label: 'Refrescar', onClick: () => this.runQuery() },
+                { icon: 'key', label: 'Índices…', onClick: () => this.openIndexes(db, col) },
                 { icon: 'download', label: 'Exportar colección', onClick: () => this.exportCollection(db, col) },
                 { icon: 'upload', label: 'Importar a colección…', onClick: () => this.importCollectionPrompt(db, col) },
                 { icon: 'download', label: 'Exportar resultados (JSON)', onClick: () => this.exportJson() },
@@ -2486,6 +2561,17 @@
                 if ((ev.event === 'deleteCollection' || ev.event === 'renameCollection') &&
                     this.sel.db === ev.database_name && this.sel.col === ev.collectionName) this.closeWorkspace();
             }
+            // Colección que el árbol aún no conoce (creada por un insert/import de otro cliente).
+            if (ev.category === 'collection' && ev.collectionName && this.colsByDb.has(ev.database_name) &&
+                !this.colsByDb.get(ev.database_name).includes(ev.collectionName)) {
+                this.reloadCols(ev.database_name);
+            }
+            // Índices: no cambian documentos; solo se refresca la vista de índices si está abierta.
+            if (ev.event === 'createIndex') {
+                const v = this.idxView;
+                if (v && v.mode === 'list' && v.db === ev.database_name && v.col === ev.collectionName) this.loadIndexes();
+                return;
+            }
             // Cambios de documentos externos en la colección abierta: recargar en vivo.
             if (!mine && ev.category === 'collection' && this.client &&
                 this.sel.db === ev.database_name && this.sel.col === ev.collectionName) {
@@ -2979,7 +3065,258 @@
             this.showModal();
         },
         showModal() { document.getElementById('overlay').classList.add('open'); },
-        closeModal() { document.getElementById('overlay').classList.remove('open'); },
+        /* ---------- índices ---------- */
+        idxView: null,
+        async openIndexes(db, col) {
+            if (!db || !col) return;
+            if (isReservedCollectionName(col)) return toast('Reserved collections are hidden', 'err');
+            this.idxView = { db, col, mode: 'list', data: null };
+            document.getElementById('modal').classList.add('wide');
+            document.getElementById('modal-title').textContent = 'Índices';
+            document.getElementById('modal-sub').textContent = `${db} › ${col}`;
+            const body = document.getElementById('modal-body'); body.className = 'modal-body';
+            body.innerHTML = '<div class="idx-empty">Cargando índices…</div>';
+            this.renderIndexFoot();
+            this.showModal();
+            await this.loadIndexes();
+        },
+        async loadIndexes() {
+            const v = this.idxView; if (!v) return;
+            try {
+                const data = await colAction(v.db, v.col, 'listIndexes');
+                if (this.idxView !== v) return;
+                v.data = data;
+                if (v.mode === 'list') this.renderIndexList();
+            } catch (e) {
+                if (this.idxView !== v) return;
+                document.getElementById('modal-body').innerHTML = `<div class="idx-empty">${escapeHtml(e.message)}</div>`;
+            }
+        },
+        renderIndexFoot() {
+            const v = this.idxView;
+            const foot = document.getElementById('modal-foot'); foot.innerHTML = '';
+            if (v.mode === 'list') {
+                const refresh = document.createElement('button'); refresh.className = 'btn'; refresh.innerHTML = `${svgIcon('refresh', 15)} Refrescar`; refresh.onclick = () => this.loadIndexes();
+                const close = document.createElement('button'); close.className = 'btn'; close.textContent = 'Cerrar'; close.onclick = () => this.closeModal();
+                const create = document.createElement('button'); create.className = 'btn primary'; create.innerHTML = `${svgIcon('plus', 15)} Crear índice`; create.onclick = () => this.showCreateIndex();
+                foot.append(refresh, close, create);
+            } else {
+                const back = document.createElement('button'); back.className = 'btn'; back.textContent = 'Volver'; back.onclick = () => { v.mode = 'list'; this.renderIndexFoot(); this.renderIndexList(); };
+                const save = document.createElement('button'); save.className = 'btn primary'; save.id = 'idx-save'; save.textContent = 'Crear índice'; save.onclick = () => this.submitCreateIndex();
+                foot.append(back, save);
+            }
+        },
+        fmtAgo(epochSecs) {
+            if (!epochSecs) return '—';
+            const d = Math.max(0, Math.floor(Date.now() / 1000) - epochSecs);
+            if (d < 60) return `hace ${d} s`;
+            if (d < 3600) return `hace ${Math.floor(d / 60)} min`;
+            if (d < 86400) return `hace ${Math.floor(d / 3600)} h`;
+            return `hace ${Math.floor(d / 86400)} d`;
+        },
+        fmtDuration(secs) {
+            if (secs == null) return '—';
+            if (secs < 60) return `${secs} s`;
+            if (secs < 3600) return `${Math.round(secs / 60)} min`;
+            if (secs < 86400) return `${Math.round(secs / 3600)} h`;
+            return `${Math.round(secs / 86400)} d`;
+        },
+        fmtDate(epochSecs) {
+            if (!epochSecs) return '—';
+            return new Date(epochSecs * 1000).toLocaleString();
+        },
+        indexCard(ix) {
+            const kindBadge = {
+                system: `<span class="idx-badge system">Sistema</span>`,
+                manual: `<span class="idx-badge manual">Manual</span>`,
+                auto: `<span class="idx-badge auto">${svgIcon('bolt', 12)} Automático</span>`,
+            }[ix.kind] || '';
+            const lockTitle = ix.kind === 'auto'
+                ? 'No se borra desde el panel: el autoindexado lo retira si deja de usarse o deja de ser eficiente'
+                : 'Índice protegido: no se puede borrar desde el panel';
+            const lock = `<span class="idx-badge lock" title="${escapeHtml(lockTitle)}">${svgIcon('lock', 12)} ${ix.kind === 'auto' ? 'Gestionado' : 'No borrable'}</span>`;
+            const opts = [];
+            if (ix.unique) opts.push('<span class="idx-badge opt">único</span>');
+            if (ix.sparse) opts.push('<span class="idx-badge opt">sparse</span>');
+            if (ix.expireAfterSeconds != null) opts.push(`<span class="idx-badge opt">TTL ${escapeHtml(this.fmtDuration(ix.expireAfterSeconds))}</span>`);
+            if (ix.partialFilterExpression) opts.push('<span class="idx-badge opt">parcial</span>');
+            const typeLabel = (t) => t === 1 ? 'asc' : t === -1 ? 'desc' : String(t);
+            const keys = (ix.keys || []).map((k) => `<span class="idx-key">${escapeHtml(k.field)}<i>${escapeHtml(typeLabel(k.type))}</i></span>`).join('');
+            let meta = '';
+            const a = ix.autoIndex;
+            if (ix.kind === 'auto' && a) {
+                const lastActivity = Math.max(a.last_used || 0, a.created || 0);
+                const dropAt = lastActivity ? lastActivity + a.drop_idle_secs : null;
+                meta = `<div class="idx-meta">
+                    <span>Creado: <b>${escapeHtml(this.fmtDate(a.created))}</b></span>
+                    <span>Último uso: <b>${escapeHtml(this.fmtAgo(a.last_used))}</b></span>
+                    <span>Consultas (ventana ${escapeHtml(this.fmtDuration(a.window_secs))}): <b>${a.queries_in_window}</b></span>
+                    <span>Se retira si no se usa hasta: <b>${escapeHtml(this.fmtDate(dropAt))}</b></span>
+                </div>`;
+                if (!a.managed) meta += `<div class="help">Sin metadatos en Dragonfly: se adoptará en la próxima revisión (cada ${escapeHtml(this.fmtDuration(a.review_secs))}).</div>`;
+            } else if (ix.kind === 'manual' && a && a.managed && a.external) {
+                meta = `<div class="idx-meta"><span>El autoindexado también lo usa · último uso: <b>${escapeHtml(this.fmtAgo(a.last_used))}</b></span></div>`;
+            }
+            const pfe = ix.partialFilterExpression ? `<div class="idx-pfe">partialFilterExpression: ${escapeHtml(safeStringify(ix.partialFilterExpression))}</div>` : '';
+            return `<div class="idx-card ${ix.kind}">
+                <div class="idx-top"><span class="idx-name">${escapeHtml(ix.name)}</span>${kindBadge}${lock}${opts.join('')}</div>
+                <div class="idx-keys">${keys}</div>${meta}${pfe}
+            </div>`;
+        },
+        renderIndexList() {
+            const v = this.idxView; if (!v || !v.data) return;
+            const all = v.data.indexes || [];
+            const manual = all.filter((i) => i.kind !== 'auto');
+            const auto = all.filter((i) => i.kind === 'auto');
+            const body = document.getElementById('modal-body'); body.className = 'modal-body';
+            const autoHelp = v.data.autoIndexEnabled
+                ? 'Creados por el autoindexado según el uso de los campos en consultas. Se eliminan solos si dejan de usarse o dejan de ser eficientes.'
+                : 'El autoindexado está desactivado (requiere Dragonfly). No se crearán índices automáticos.';
+            body.innerHTML = `
+                <div class="idx-summary">
+                    <span class="idx-stat">Total <b>${all.length}</b></span>
+                    <span class="idx-stat">${svgIcon('lock', 13)} Manuales y sistema <b>${manual.length}</b></span>
+                    <span class="idx-stat">${svgIcon('bolt', 13)} Automáticos <b>${auto.length}</b></span>
+                </div>
+                <div class="idx-section">
+                    <h4>${svgIcon('lock', 14)} Manuales y de sistema</h4>
+                    <p class="help">Creados a mano o por MongoDB (<code>_id_</code>). No se pueden borrar desde el panel y el autoindexado nunca los elimina.</p>
+                    <div class="idx-list">${manual.length ? manual.map((i) => this.indexCard(i)).join('') : '<div class="idx-empty">La colección aún no existe o no tiene índices.</div>'}</div>
+                </div>
+                <div class="idx-section">
+                    <h4>${svgIcon('bolt', 14)} Automáticos</h4>
+                    <p class="help">${escapeHtml(autoHelp)}</p>
+                    <div class="idx-list">${auto.length ? auto.map((i) => this.indexCard(i)).join('') : '<div class="idx-empty">No hay índices automáticos en esta colección.</div>'}</div>
+                </div>`;
+        },
+        showCreateIndex() {
+            const v = this.idxView; if (!v) return;
+            v.mode = 'create';
+            v.form = { keys: [{ field: '', type: '1' }] };
+            this.renderIndexFoot();
+            this.renderCreateIndex();
+        },
+        renderCreateIndex() {
+            const v = this.idxView; if (!v) return;
+            const body = document.getElementById('modal-body'); body.className = 'modal-body';
+            body.innerHTML = `
+                <div class="idx-form">
+                    <div>
+                        <label class="field-label">Campos (el orden importa en índices compuestos)</label>
+                        <div id="idx-rows"></div>
+                        <button class="btn ghost" id="idx-add">${svgIcon('plus', 14)} Añadir campo</button>
+                    </div>
+                    <div class="idx-opts">
+                        <div>
+                            <label class="field-label" for="idx-name">Nombre (opcional)</label>
+                            <input class="input" id="idx-name" placeholder="se genera si se deja vacío">
+                        </div>
+                        <div>
+                            <label class="field-label" for="idx-ttl">TTL en segundos (opcional)</label>
+                            <input class="input" id="idx-ttl" inputmode="numeric" placeholder="solo índices de un campo de fecha">
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:18px;flex-wrap:wrap;">
+                        <label class="idx-check"><input type="checkbox" id="idx-unique"> Único</label>
+                        <label class="idx-check"><input type="checkbox" id="idx-sparse"> Sparse (omite documentos sin el campo)</label>
+                    </div>
+                    <div>
+                        <label class="field-label" for="idx-pfe">Filtro parcial (partialFilterExpression, JSON opcional)</label>
+                        <textarea class="input" id="idx-pfe" placeholder='{ "activo": true }'></textarea>
+                    </div>
+                    <div>
+                        <label class="field-label">Vista previa</label>
+                        <div class="idx-preview" id="idx-preview"></div>
+                        <p class="help">El índice se crea como <b>manual</b>: queda protegido y el autoindexado no lo elimina. Si existe un índice automático con los mismos campos, se sustituye por este. Requiere rol dbAdmin.</p>
+                    </div>
+                </div>`;
+            body.oninput = () => this.syncIndexForm(); body.onchange = () => this.syncIndexForm();
+            document.getElementById('idx-add').onclick = () => { this.syncIndexForm(); v.form.keys.push({ field: '', type: '1' }); this.renderIndexRows(true); };
+            this.renderIndexRows(false);
+            setTimeout(() => { const f = body.querySelector('[data-idx-field]'); if (f && !f.value) f.focus(); }, 60);
+        },
+        indexRowsHtml() {
+            const v = this.idxView;
+            const types = [['1', 'Ascendente (1)'], ['-1', 'Descendente (-1)'], ['text', 'Texto'], ['hashed', 'Hashed'], ['2dsphere', '2dsphere'], ['2d', '2d']];
+            return v.form.keys.map((k, i) => `
+                <div class="idx-key-row">
+                    <input class="input" list="field-list" placeholder="campo (p. ej. sku o cliente.id)" value="${escapeHtml(k.field)}" data-idx-field="${i}" aria-label="Campo ${i + 1}">
+                    <select data-idx-type="${i}" aria-label="Tipo del campo ${i + 1}">${types.map(([val, lab]) => `<option value="${val}"${k.type === val ? ' selected' : ''}>${lab}</option>`).join('')}</select>
+                    <button class="icon-btn" title="Quitar campo" aria-label="Quitar campo ${i + 1}" data-idx-remove="${i}" ${v.form.keys.length === 1 ? 'disabled' : ''}>${svgIcon('x', 14)}</button>
+                </div>`).join('');
+        },
+        // Redibuja solo las filas de campos: nombre y opciones conservan lo escrito.
+        renderIndexRows(focusLast) {
+            const v = this.idxView; if (!v) return;
+            const box = document.getElementById('idx-rows'); if (!box) return;
+            box.innerHTML = this.indexRowsHtml();
+            box.querySelectorAll('[data-idx-remove]').forEach((b) => b.onclick = () => { this.syncIndexForm(); v.form.keys.splice(+b.dataset.idxRemove, 1); this.renderIndexRows(false); });
+            this.syncIndexForm();
+            if (focusLast) { const all = box.querySelectorAll('[data-idx-field]'); all[all.length - 1]?.focus(); }
+        },
+        syncIndexForm() {
+            const v = this.idxView; if (!v || v.mode !== 'create') return;
+            const body = document.getElementById('modal-body');
+            {
+                body.querySelectorAll('[data-idx-field]').forEach((el) => { v.form.keys[+el.dataset.idxField].field = el.value.trim(); });
+                body.querySelectorAll('[data-idx-type]').forEach((el) => { v.form.keys[+el.dataset.idxType].type = el.value; });
+                const spec = {};
+                v.form.keys.forEach((k) => { if (k.field) spec[k.field] = /^-?1$/.test(k.type) ? Number(k.type) : k.type; });
+                const preview = document.getElementById('idx-preview');
+                if (preview) preview.textContent = `createIndex(${JSON.stringify(spec)}${this.indexOptionsPreview()})`;
+            }
+        },
+        indexOptionsPreview() {
+            const o = this.readIndexOptions(true);
+            return Object.keys(o).length ? `, ${JSON.stringify(o)}` : '';
+        },
+        readIndexOptions(lenient) {
+            const o = {};
+            const name = document.getElementById('idx-name')?.value.trim();
+            if (name) o.name = name;
+            if (document.getElementById('idx-unique')?.checked) o.unique = true;
+            if (document.getElementById('idx-sparse')?.checked) o.sparse = true;
+            const ttl = document.getElementById('idx-ttl')?.value.trim();
+            if (ttl) {
+                if (!/^\d+$/.test(ttl)) { if (!lenient) throw new Error('El TTL debe ser un número entero de segundos'); }
+                else o.expireAfterSeconds = Number(ttl);
+            }
+            const pfe = document.getElementById('idx-pfe')?.value.trim();
+            if (pfe) {
+                const parsed = safeJsonParse(pfe, undefined);
+                if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) { if (!lenient) throw new Error('El filtro parcial debe ser un objeto JSON válido'); }
+                else o.partialFilterExpression = parsed;
+            }
+            return o;
+        },
+        async submitCreateIndex() {
+            const v = this.idxView; if (!v) return;
+            const keys = v.form.keys.filter((k) => k.field).map((k) => ({ field: k.field, type: /^-?1$/.test(k.type) ? Number(k.type) : k.type }));
+            if (!keys.length) return toast('Indica al menos un campo', 'err');
+            if (new Set(keys.map((k) => k.field)).size !== keys.length) return toast('Hay campos repetidos', 'err');
+            let options;
+            try { options = this.readIndexOptions(false); } catch (e) { return toast(e.message, 'err'); }
+            if (options.name && /^mdb_auto_/.test(options.name)) return toast('El prefijo mdb_auto_ está reservado para índices automáticos', 'err');
+            const save = document.getElementById('idx-save');
+            if (save) { save.disabled = true; save.textContent = 'Creando…'; }
+            try {
+                const r = await colAction(v.db, v.col, 'createIndex', { keys, options });
+                toast(r && r.replacedAutoIndex ? `Índice ${r.name} creado (sustituye a ${r.replacedAutoIndex})` : `Índice ${r ? r.name : ''} creado`, 'ok');
+                if (this.idxView !== v) return;
+                v.mode = 'list';
+                this.renderIndexFoot();
+                document.getElementById('modal-body').innerHTML = '<div class="idx-empty">Cargando índices…</div>';
+                await this.loadIndexes();
+            } catch (e) {
+                toast(e.message, 'err');
+                if (save) { save.disabled = false; save.textContent = 'Crear índice'; }
+            }
+        },
+        closeModal() {
+            document.getElementById('overlay').classList.remove('open');
+            document.getElementById('modal').classList.remove('wide');
+            this.idxView = null;
+        },
     };
     document.getElementById('overlay').addEventListener('click', (e) => { if (e.target.id === 'overlay') App.closeModal(); });
     document.getElementById('col-kebab').addEventListener('click', (e) => { e.stopPropagation(); App.colHeadMenu(e); });

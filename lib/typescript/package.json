@@ -1,0 +1,18 @@
+{
+  "name": "microservicedb-api",
+  "version": "2.0.0",
+  "description": "Cliente TypeScript de MicroserviceDB (WebSocket y gRPC)",
+  "main": "../Build/Library/MicroserviceDBAPI.js",
+  "types": "../Build/Library/MicroserviceDBAPI.d.ts",
+  "scripts": {
+    "build": "tsc --project tsconfig.json"
+  },
+  "dependencies": {
+    "@grpc/grpc-js": "^1.12.0",
+    "@grpc/proto-loader": "^0.7.13",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}

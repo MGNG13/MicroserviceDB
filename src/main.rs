@@ -10,12 +10,16 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use dotenvy::dotenv;
 
+mod auth;
+use auth::{Auth, Principal};
+
 use chrono::{DateTime, Local, Timelike};
 use flate2::write::GzEncoder;
 use flate2::Compression;
 use futures::{SinkExt, StreamExt};
 use mongodb::{
-    bson::{doc, Document},
+    bson::{doc, Bson, Document},
+    options::{Acknowledgment, ClientOptions, CollectionOptions, IndexOptions, WriteConcern},
     Client,
     IndexModel,
 };
@@ -26,9 +30,22 @@ use tokio::fs;
 use tokio::process::Command;
 use tokio::sync::broadcast;
 use tokio::time::{sleep, Duration, interval};
+use tokio_stream::wrappers::{BroadcastStream, ReceiverStream};
+use tonic::transport::Server as TonicServer;
+use tonic::{Request, Response, Status};
 use warp::http::StatusCode;
 use warp::ws::{Message, WebSocket};
 use warp::Filter;
+
+pub mod pb {
+    tonic::include_proto!("microservicedb");
+}
+
+use pb::database_service_server::{DatabaseService, DatabaseServiceServer};
+use pb::{
+    ActionRequest, ActionResponse, ChangeEvent, DocumentBatch, ExportCollectionRequest,
+    StreamChangesRequest,
+};
 
 // =============================================================================
 // TIPOS GLOBALES
@@ -48,6 +65,10 @@ const DEFAULT_DOC_CACHE_TTL_SECS: u64 = 5 * 60;
 const DEFAULT_AUTOINDEX_THRESHOLD: u64 = 50;
 const DEFAULT_AUTOINDEX_WINDOW_SECS: u64 = 600;
 const DEFAULT_AUTOINDEX_DROP_IDLE_SECS: u64 = 86400;
+const DEFAULT_AUTOINDEX_REVIEW_SECS: u64 = 600;
+const DEFAULT_AUTOINDEX_MIN_DOCS: u64 = 1000;
+const DEFAULT_AUTOINDEX_SAMPLE_SIZE: u64 = 1000;
+const DEFAULT_AUTOINDEX_MAX_MATCH_RATIO: f64 = 0.10;
 const ENV_BACKUP_DIR: &str = "MICROSERVICEDB_BACKUP_DIR";
 const ENV_BACKUP_INTERVAL_MINS: &str = "MICROSERVICEDB_BACKUP_INTERVAL_MINS";
 const ENV_DRAGONFLY_URL: &str = "MICROSERVICEDB_DRAGONFLY_URL";
@@ -62,8 +83,99 @@ const REQUEST_CACHE_PREFIX: &str = "microservicedb:request_cache";
 const DOC_CACHE_PREFIX: &str = "microservicedb:doc";
 const INDEX_PREFIX: &str = "microservicedb:idx";
 const INDEX_STATS_PREFIX: &str = "microservicedb:idx_stats";
+const ENV_PROFILE: &str = "MICROSERVICEDB_PROFILE";
+const ENV_GRPC_PORT: &str = "MICROSERVICEDB_GRPC_PORT";
+const ENV_MONGODB_CONNECT_TIMEOUT_SECS: &str = "MICROSERVICEDB_MONGODB_CONNECT_TIMEOUT_SECS";
+const ENV_MONGODB_SERVER_SELECTION_TIMEOUT_SECS: &str =
+    "MICROSERVICEDB_MONGODB_SERVER_SELECTION_TIMEOUT_SECS";
+const ENV_MONGODB_MAX_POOL_SIZE: &str = "MICROSERVICEDB_MONGODB_MAX_POOL_SIZE";
+const DEFAULT_BACKUP_INTERVAL_MINS: u64 = 30;
+const EXPORT_STREAM_BATCH_SIZE: usize = 500;
+const EXPORT_STREAM_BATCH_BYTES: usize = 1024 * 1024;
 
 const BOOTSTRAP_COLLECTION: &str = "__mdb_placeholder_empty__";
+
+// =============================================================================
+// PERFILES DE EJECUCIÓN (MICROSERVICEDB_PROFILE)
+// =============================================================================
+
+/// Perfil que fija los valores por defecto de conexión a MongoDB, respaldos y logs.
+/// Cualquier variable de entorno explícita tiene prioridad sobre el perfil.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum Profile {
+    #[default]
+    Production,
+    Local,
+    Dev,
+    Custom,
+}
+
+impl Profile {
+    fn from_env() -> Self {
+        match env_string(ENV_PROFILE) {
+            Some(raw) => match raw.trim().to_ascii_lowercase().as_str() {
+                "prod" | "production" => Profile::Production,
+                "local" => Profile::Local,
+                "dev" | "development" => Profile::Dev,
+                _ => Profile::Custom,
+            },
+            None => Profile::default(),
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Profile::Production => "production",
+            Profile::Local => "local",
+            Profile::Dev => "dev",
+            Profile::Custom => "custom",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct TuningDefaults {
+    mongodb_connect_timeout_secs: u64,
+    mongodb_server_selection_timeout_secs: u64,
+    mongodb_max_pool_size: u32,
+    backup_interval_mins_default: u64,
+    log_level_default: &'static str,
+}
+
+impl TuningDefaults {
+    fn from_profile(p: Profile) -> Self {
+        match p {
+            Profile::Production | Profile::Custom => TuningDefaults {
+                mongodb_connect_timeout_secs: 300,
+                mongodb_server_selection_timeout_secs: 300,
+                mongodb_max_pool_size: 20,
+                backup_interval_mins_default: DEFAULT_BACKUP_INTERVAL_MINS,
+                log_level_default: "info",
+            },
+            Profile::Local => TuningDefaults {
+                mongodb_connect_timeout_secs: 30,
+                mongodb_server_selection_timeout_secs: 15,
+                mongodb_max_pool_size: 10,
+                backup_interval_mins_default: DEFAULT_BACKUP_INTERVAL_MINS,
+                log_level_default: "debug",
+            },
+            Profile::Dev => TuningDefaults {
+                mongodb_connect_timeout_secs: 10,
+                mongodb_server_selection_timeout_secs: 5,
+                mongodb_max_pool_size: 5,
+                backup_interval_mins_default: DEFAULT_BACKUP_INTERVAL_MINS,
+                log_level_default: "trace",
+            },
+        }
+    }
+}
+
+fn env_u64_or(name: &str, default: u64) -> Result<u64, String> {
+    match env_string(name) {
+        Some(raw) => parse_u64(&raw, name),
+        None => Ok(default),
+    }
+}
 
 // =============================================================================
 // LOGGING
@@ -97,9 +209,11 @@ fn parse_log_level(raw: &str) -> Option<LogLevel> {
 
 fn get_log_config() -> &'static LogConfig {
     LOG_CONFIG.get_or_init(|| {
+        let td = TuningDefaults::from_profile(Profile::from_env());
         let level = env::var(ENV_LOG_LEVEL)
             .ok()
             .and_then(|s| parse_log_level(&s))
+            .or_else(|| parse_log_level(td.log_level_default))
             .unwrap_or(LogLevel::Info);
         LogConfig { level }
     })
@@ -290,7 +404,12 @@ fn get_local_ip() -> String {
 
 #[derive(Clone)]
 struct AppConfig {
+    profile: Profile,
     port: u16,
+    grpc_port: u16,
+    mongodb_connect_timeout_secs: u64,
+    mongodb_server_selection_timeout_secs: u64,
+    mongodb_max_pool_size: u32,
     mongodb_uri: Option<String>,
     dragonfly_url: Option<String>,
     backup_enabled: bool,
@@ -301,10 +420,16 @@ struct AppConfig {
     autoindex_threshold: u64,
     autoindex_window_secs: u64,
     autoindex_drop_idle_secs: u64,
+    autoindex_review_secs: u64,
+    autoindex_min_docs: u64,
+    autoindex_sample_size: u64,
+    autoindex_max_match_ratio: f64,
 }
 
 fn load_app_config() -> Result<AppConfig, String> {
     let cli = parse_cli_args()?;
+    let profile = Profile::from_env();
+    let td = TuningDefaults::from_profile(profile);
     let port = match cli.port {
         Some(value) => value,
         None => match env_string(ENV_PORT) {
@@ -312,6 +437,25 @@ fn load_app_config() -> Result<AppConfig, String> {
             None => DEFAULT_PORT,
         },
     };
+    // gRPC escucha en su propio puerto: por defecto el siguiente al HTTP/WebSocket.
+    let grpc_port = match env_string(ENV_GRPC_PORT) {
+        Some(value) => parse_port(&value, ENV_GRPC_PORT)?,
+        None => port
+            .checked_add(1)
+            .ok_or_else(|| format!("Cannot derive gRPC port from {port}; set {ENV_GRPC_PORT}"))?,
+    };
+    if grpc_port == port {
+        return Err(format!("{ENV_GRPC_PORT} must differ from the HTTP/WebSocket port ({port})"));
+    }
+
+    let mongodb_connect_timeout_secs =
+        env_u64_or(ENV_MONGODB_CONNECT_TIMEOUT_SECS, td.mongodb_connect_timeout_secs)?;
+    let mongodb_server_selection_timeout_secs = env_u64_or(
+        ENV_MONGODB_SERVER_SELECTION_TIMEOUT_SECS,
+        td.mongodb_server_selection_timeout_secs,
+    )?;
+    let mongodb_max_pool_size = env_u64_or(ENV_MONGODB_MAX_POOL_SIZE, td.mongodb_max_pool_size as u64)?
+        .clamp(1, u32::MAX as u64) as u32;
 
     let requested_request_cache_ttl_secs = match env_string(ENV_REQUEST_CACHE_TTL_SECS) {
         Some(value) => parse_u64(&value, ENV_REQUEST_CACHE_TTL_SECS)?,
@@ -334,6 +478,20 @@ fn load_app_config() -> Result<AppConfig, String> {
     let autoindex_drop_idle_secs = env_string("MICROSERVICEDB_AUTOINDEX_DROP_IDLE_SECS")
         .and_then(|v| v.parse().ok())
         .unwrap_or(DEFAULT_AUTOINDEX_DROP_IDLE_SECS);
+    let autoindex_review_secs =
+        env_u64_or("MICROSERVICEDB_AUTOINDEX_REVIEW_SECS", DEFAULT_AUTOINDEX_REVIEW_SECS)?.max(60);
+    let autoindex_min_docs = env_u64_or("MICROSERVICEDB_AUTOINDEX_MIN_DOCS", DEFAULT_AUTOINDEX_MIN_DOCS)?;
+    let autoindex_sample_size =
+        env_u64_or("MICROSERVICEDB_AUTOINDEX_SAMPLE_SIZE", DEFAULT_AUTOINDEX_SAMPLE_SIZE)?.max(1);
+    let autoindex_max_match_ratio = match env_string("MICROSERVICEDB_AUTOINDEX_MAX_MATCH_RATIO") {
+        Some(raw) => raw
+            .trim()
+            .parse::<f64>()
+            .ok()
+            .filter(|v| *v > 0.0 && *v <= 1.0)
+            .ok_or_else(|| "MICROSERVICEDB_AUTOINDEX_MAX_MATCH_RATIO must be a number in (0, 1]".to_string())?,
+        None => DEFAULT_AUTOINDEX_MAX_MATCH_RATIO,
+    };
 
     let backup_interval_mins = match env_string(ENV_BACKUP_INTERVAL_MINS) {
         Some(value) => {
@@ -343,7 +501,7 @@ fn load_app_config() -> Result<AppConfig, String> {
             }
             Some(parsed)
         }
-        None => None,
+        None => Some(td.backup_interval_mins_default),
     };
 
     let mongodb_uri = env_string(ENV_MONGODB_URI);
@@ -363,8 +521,28 @@ fn load_app_config() -> Result<AppConfig, String> {
         }
     }
 
+    log_line(
+        LogLevel::Info,
+        "app_profile_loaded",
+        Some(json!({
+            "profile": profile.name(),
+            "port": port,
+            "grpc_port": grpc_port,
+            "mongodb_connect_timeout_secs": mongodb_connect_timeout_secs,
+            "mongodb_server_selection_timeout_secs": mongodb_server_selection_timeout_secs,
+            "mongodb_max_pool_size": mongodb_max_pool_size,
+            "backup_enabled": cli.backup_enabled,
+            "backup_interval_mins": backup_interval_mins,
+        })),
+    );
+
     Ok(AppConfig {
+        profile,
         port,
+        grpc_port,
+        mongodb_connect_timeout_secs,
+        mongodb_server_selection_timeout_secs,
+        mongodb_max_pool_size,
         mongodb_uri,
         dragonfly_url,
         backup_enabled: cli.backup_enabled,
@@ -375,6 +553,10 @@ fn load_app_config() -> Result<AppConfig, String> {
         autoindex_threshold,
         autoindex_window_secs,
         autoindex_drop_idle_secs,
+        autoindex_review_secs,
+        autoindex_min_docs,
+        autoindex_sample_size,
+        autoindex_max_match_ratio,
     })
 }
 
@@ -405,6 +587,16 @@ fn tls_config() -> Result<Option<(String, String)>, String> {
         )),
         (None, None) => Ok(None),
     }
+}
+
+/// Identidad TLS de gRPC a partir del mismo par certificado/llave PEM de HTTPS.
+fn grpc_tls_identity() -> Result<Option<tonic::transport::Identity>, String> {
+    let Some((cert, key)) = tls_config()? else {
+        return Ok(None);
+    };
+    let cert_pem = std::fs::read(&cert).map_err(|e| format!("Could not read TLS cert '{cert}': {e}"))?;
+    let key_pem = std::fs::read(&key).map_err(|e| format!("Could not read TLS key '{key}': {e}"))?;
+    Ok(Some(tonic::transport::Identity::from_pem(cert_pem, key_pem)))
 }
 
 // =============================================================================
@@ -773,11 +965,24 @@ async fn connect_mongodb(config: &AppConfig) -> Result<MongoConnectionInfo, Stri
     log_line(
         LogLevel::Info,
         "mongodb_connect_start",
-        Some(json!({ "uri": uri })),
+        Some(json!({
+            "uri": uri,
+            "profile": config.profile.name(),
+            "connect_timeout_secs": config.mongodb_connect_timeout_secs,
+            "server_selection_timeout_secs": config.mongodb_server_selection_timeout_secs,
+            "max_pool_size": config.mongodb_max_pool_size,
+        })),
     );
 
-    let client = Client::with_uri_str(uri)
+    let mut client_options = ClientOptions::parse(uri)
         .await
+        .map_err(|e| format!("Failed to parse MongoDB URI: {e}"))?;
+    client_options.connect_timeout = Some(Duration::from_secs(config.mongodb_connect_timeout_secs));
+    client_options.server_selection_timeout =
+        Some(Duration::from_secs(config.mongodb_server_selection_timeout_secs));
+    client_options.max_pool_size = Some(config.mongodb_max_pool_size);
+
+    let client = Client::with_options(client_options)
         .map_err(|e| format!("Failed to create MongoDB client: {e}"))?;
 
     client
@@ -922,6 +1127,9 @@ impl RedisDocumentCache {
 // REDIS INDEX MANAGER — Índices secundarios en Redis (ZSET, SET, STRING)
 // =============================================================================
 
+// Hoy las escrituras solo mantienen el índice de _id (Tag); el resto de tipos
+// se conservan para el borrado de claves existentes.
+#[allow(dead_code)]
 #[derive(Clone, Debug)]
 enum IndexType {
     Numeric,   // Sorted Set: score = valor numérico
@@ -1049,71 +1257,24 @@ impl RedisIndexManager {
         let _: Result<(), _> = pipe.query_async(&mut conn).await;
     }
 
-    /// Query por rango numérico. Retorna IDs.
-    async fn query_numeric_range(&self, db: &str, collection: &str, field: &str, min: f64, max: f64) -> Vec<String> {
-        let mut conn = self.connection.clone();
-        let key = self.idx_key_numeric(db, collection, field);
-        match conn.zrangebyscore(&key, min, max).await {
-            Ok(ids) => ids,
-            Err(e) => {
-                log_line(LogLevel::Warn, "index_query_numeric_failed", Some(json!({"error": e.to_string()})));
-                vec![]
-            }
-        }
-    }
-
-    /// Query por tag exacto. Retorna IDs.
-    async fn query_tag(&self, db: &str, collection: &str, field: &str, value: &str) -> Vec<String> {
-        let mut conn = self.connection.clone();
-        let key = self.idx_key_tag(db, collection, field, value);
-        match conn.smembers(&key).await {
-            Ok(ids) => ids,
-            Err(e) => {
-                log_line(LogLevel::Warn, "index_query_tag_failed", Some(json!({"error": e.to_string()})));
-                vec![]
-            }
-        }
-    }
-
-    /// Query por string exacto. Retorna un ID.
-    async fn query_string(&self, db: &str, collection: &str, field: &str, value: &str) -> Option<String> {
-        let mut conn = self.connection.clone();
-        let key = self.idx_key_string(db, collection, field, value);
-        match conn.get(&key).await {
-            Ok(id) => Some(id),
-            Err(_) => None,
-        }
-    }
-
-    /// Query por múltiples tags (AND lógico con SINTER).
-    async fn query_tags_and(&self, db: &str, collection: &str, field: &str, values: &[String]) -> Vec<String> {
-        if values.is_empty() {
-            return vec![];
-        }
-        let mut conn = self.connection.clone();
-        let keys: Vec<String> = values.iter()
-            .map(|v| self.idx_key_tag(db, collection, field, v))
-            .collect();
-        match redis::cmd("SINTER").arg(&keys).query_async::<Vec<String>>(&mut conn).await {
-            Ok(ids) => ids,
-            Err(e) => {
-                log_line(LogLevel::Warn, "index_query_tags_and_failed", Some(json!({"error": e.to_string()})));
-                vec![]
-            }
-        }
-    }
-
     /// Elimina todos los índices de una colección.
     async fn drop_collection_indexes(&self, db: &str, collection: &str) {
         let mut conn = self.connection.clone();
         let pattern = format!("{}:{}:{}:*", self.prefix, cache_key_segment(db), cache_key_segment(collection));
-        if let Ok((_, keys)) = redis::cmd("SCAN").arg("0").arg("MATCH").arg(&pattern).arg("COUNT").arg(1000).query_async::<(String, Vec<String>)>(&mut conn).await {
-            if !keys.is_empty() {
-                for chunk in keys.chunks(500) {
-                    let _: Result<(), _> = redis::cmd("DEL").arg(chunk).query_async(&mut conn).await;
-                }
-            }
-        }
+        let _ = clear_keys(&mut conn, &pattern).await;
+    }
+
+    /// Elimina los índices de un solo campo (numeric, tag y string).
+    async fn drop_field_indexes(&self, db: &str, collection: &str, field: &str) {
+        let mut conn = self.connection.clone();
+        let pattern = format!(
+            "{}:{}:{}:{}:*",
+            self.prefix,
+            cache_key_segment(db),
+            cache_key_segment(collection),
+            cache_key_segment(field)
+        );
+        let _ = clear_keys(&mut conn, &pattern).await;
     }
 
     fn hash_value(val: &Value) -> f64 {
@@ -1129,205 +1290,9 @@ impl RedisIndexManager {
 // QUERY PLAN ANALYZER — Decide si una query puede usar índices Redis
 // =============================================================================
 
-#[derive(Clone, Debug)]
-struct QueryPlan {
-    can_use_redis: bool,
-    index_strategy: IndexStrategy,
-    fallback_to_mongo: bool,
-}
-
-#[derive(Clone, Debug)]
-enum IndexStrategy {
-    PrimaryKeyLookup { id: String },
-    NumericRange { field: String, min: f64, max: f64 },
-    TagExact { field: String, value: String },
-    StringExact { field: String, value: String },
-    TagsAnd { field: String, values: Vec<String> },
-    Composite(Vec<IndexStrategy>),
-    None,
-}
-
 struct QueryPlanAnalyzer;
 
 impl QueryPlanAnalyzer {
-    /// Analiza un filter JSON y determina si puede resolverse con índices Redis.
-    fn analyze(filter: &Value) -> QueryPlan {
-        let Some(obj) = filter.as_object() else {
-            return QueryPlan { can_use_redis: false, index_strategy: IndexStrategy::None, fallback_to_mongo: true };
-        };
-
-        // Caso 1: lookup por _id exacto
-        if let Some(id_val) = obj.get("_id") {
-            if !is_operator_object(id_val) {
-                let id = json_to_string(id_val);
-                return QueryPlan {
-                    can_use_redis: true,
-                    index_strategy: IndexStrategy::PrimaryKeyLookup { id },
-                    fallback_to_mongo: false,
-                };
-            }
-        }
-
-        // Caso 2: campo único con operador $eq o valor directo
-        if obj.len() == 1 {
-            for (k, v) in obj {
-                if k.starts_with('$') {
-                    continue;
-                }
-                if let Some(strategy) = Self::analyze_field_condition(k, v) {
-                    return QueryPlan {
-                        can_use_redis: true,
-                        index_strategy: strategy,
-                        fallback_to_mongo: false,
-                    };
-                }
-            }
-        }
-
-        // Caso 3: múltiples condiciones $and que podrían intersectarse
-        if let Some(and_arr) = obj.get("$and").and_then(|v| v.as_array()) {
-            let mut strategies = Vec::new();
-            for cond in and_arr {
-                if let Some(cond_obj) = cond.as_object() {
-                    for (k, v) in cond_obj {
-                        if let Some(s) = Self::analyze_field_condition(k, v) {
-                            strategies.push(s);
-                        }
-                    }
-                }
-            }
-            if !strategies.is_empty() {
-                return QueryPlan {
-                    can_use_redis: true,
-                    index_strategy: IndexStrategy::Composite(strategies),
-                    fallback_to_mongo: false,
-                };
-            }
-        }
-
-        QueryPlan {
-            can_use_redis: false,
-            index_strategy: IndexStrategy::None,
-            fallback_to_mongo: true,
-        }
-    }
-
-    fn analyze_field_condition(field: &str, value: &Value) -> Option<IndexStrategy> {
-        if field.starts_with('$') || field == "_id" {
-            return None;
-        }
-
-        // Valor directo (implica $eq)
-        if !is_operator_object(value) {
-            if let Some(num) = value.as_f64() {
-                return Some(IndexStrategy::NumericRange {
-                    field: field.to_string(),
-                    min: num,
-                    max: num,
-                });
-            }
-            // Valores array (tipo tags/multi-valor) usan TagExact
-            if value.is_array() {
-                return Some(IndexStrategy::TagExact {
-                    field: field.to_string(),
-                    value: json_to_string(value),
-                });
-            }
-            return Some(IndexStrategy::StringExact {
-                field: field.to_string(),
-                value: json_to_string(value),
-            });
-        }
-
-        // Operador object
-        if let Some(op_obj) = value.as_object() {
-            for (op, op_val) in op_obj {
-                match op.as_str() {
-                    "$eq" => {
-                        if let Some(num) = op_val.as_f64() {
-                            return Some(IndexStrategy::NumericRange {
-                                field: field.to_string(),
-                                min: num,
-                                max: num,
-                            });
-                        }
-                        // $eq con array usa TagExact (coincidencia tag)
-                        if op_val.is_array() {
-                            return Some(IndexStrategy::TagExact {
-                                field: field.to_string(),
-                                value: json_to_string(op_val),
-                            });
-                        }
-                        return Some(IndexStrategy::StringExact {
-                            field: field.to_string(),
-                            value: json_to_string(op_val),
-                        });
-                    }
-                    "$gt" => {
-                        if let Some(min) = op_val.as_f64() {
-                            return Some(IndexStrategy::NumericRange {
-                                field: field.to_string(),
-                                min: min + f64::EPSILON,
-                                max: f64::INFINITY,
-                            });
-                        }
-                    }
-                    "$gte" => {
-                        if let Some(min) = op_val.as_f64() {
-                            return Some(IndexStrategy::NumericRange {
-                                field: field.to_string(),
-                                min,
-                                max: f64::INFINITY,
-                            });
-                        }
-                    }
-                    "$lt" => {
-                        if let Some(max) = op_val.as_f64() {
-                            return Some(IndexStrategy::NumericRange {
-                                field: field.to_string(),
-                                min: f64::NEG_INFINITY,
-                                max: max - f64::EPSILON,
-                            });
-                        }
-                    }
-                    "$lte" => {
-                        if let Some(max) = op_val.as_f64() {
-                            return Some(IndexStrategy::NumericRange {
-                                field: field.to_string(),
-                                min: f64::NEG_INFINITY,
-                                max,
-                            });
-                        }
-                    }
-                    "$in" => {
-                        if let Some(arr) = op_val.as_array() {
-                            let values: Vec<String> = arr.iter().map(json_to_string).collect();
-                            return Some(IndexStrategy::TagsAnd {
-                                field: field.to_string(),
-                                values,
-                            });
-                        }
-                    }
-                    "$all" => {
-                        // $all: todos los valores deben estar presentes (interseccion de tags)
-                        // Para arrays pequeños usamos TagsAnd como aproximacion optimizada
-                        if let Some(arr) = op_val.as_array() {
-                            if !arr.is_empty() {
-                                let values: Vec<String> = arr.iter().map(json_to_string).collect();
-                                return Some(IndexStrategy::TagsAnd {
-                                    field: field.to_string(),
-                                    values,
-                                });
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        None
-    }
 
     /// Extrae los campos que podrían beneficiarse de un índice.
     fn extract_indexable_fields(filter: &Value) -> Vec<String> {
@@ -1360,281 +1325,524 @@ impl QueryPlanAnalyzer {
 // AUTO INDEX MANAGER — Autocrea y autodestruye índices basado en patrones de uso
 // =============================================================================
 
+/// Prefijo de nombre de los índices que crea el autoindexado en MongoDB. Solo se
+/// eliminan índices con este prefijo: los índices creados a mano nunca se tocan.
+const AUTOINDEX_NAME_PREFIX: &str = "mdb_auto_";
+
+/// Metadatos de un índice gestionado por el autoindexado (clave `...:exists` en Redis).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct AutoIndexMeta {
+    /// Nombre del índice en MongoDB.
+    name: String,
+    /// Epoch (s) en que se creó o adoptó.
+    created: u64,
+    /// `true` si el índice ya existía en MongoDB con otro nombre (creado a mano):
+    /// se usa para Redis, pero jamás se elimina de MongoDB.
+    #[serde(default)]
+    external: bool,
+}
+
+fn hex_decode(raw: &str) -> Option<String> {
+    if raw.len() % 2 != 0 || !raw.is_ascii() {
+        return None;
+    }
+    let bytes = (0..raw.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&raw[i..i + 2], 16))
+        .collect::<Result<Vec<u8>, _>>()
+        .ok()?;
+    String::from_utf8(bytes).ok()
+}
+
 #[derive(Clone)]
 struct AutoIndexManager {
     connection: redis::aio::MultiplexedConnection,
+    /// Consultas sobre un campo necesarias para crear su índice.
     threshold: u64,
+    /// Ventana (s) del contador de consultas.
     window_secs: u64,
+    /// Un índice sin consultas durante este tiempo (s) se elimina.
     drop_idle_secs: u64,
+    /// Cada cuánto (s) se revisan eficiencia, inactividad e índices huérfanos.
+    review_secs: u64,
+    /// Colecciones con menos documentos no justifican un índice.
+    min_docs: u64,
+    /// Documentos muestreados para medir la selectividad.
+    sample_size: u64,
+    /// Fracción esperada de la colección que devuelve una igualdad sobre el campo;
+    /// por encima de este valor el índice no es eficiente.
+    max_match_ratio: f64,
     prefix: String,
 }
 
 impl AutoIndexManager {
-    fn stats_key(&self, db: &str, collection: &str, field: &str) -> String {
-        format!("{}:{}:{}:{}:{}", self.prefix, cache_key_segment(db), cache_key_segment(collection), cache_key_segment(field), "queries")
+    fn key(&self, db: &str, collection: &str, field: &str, suffix: &str) -> String {
+        format!(
+            "{}:{}:{}:{}:{}",
+            self.prefix,
+            cache_key_segment(db),
+            cache_key_segment(collection),
+            cache_key_segment(field),
+            suffix
+        )
     }
 
-    fn last_used_key(&self, db: &str, collection: &str, field: &str) -> String {
-        format!("{}:{}:{}:{}:{}", self.prefix, cache_key_segment(db), cache_key_segment(collection), cache_key_segment(field), "last_used")
+    /// Descompone `prefix:db:col:field:suffix` en (db, col, field).
+    fn parse_key(&self, key: &str) -> Option<(String, String, String)> {
+        let rest = key.strip_prefix(&self.prefix)?.strip_prefix(':')?;
+        let mut parts = rest.split(':');
+        let db = hex_decode(parts.next()?)?;
+        let col = hex_decode(parts.next()?)?;
+        let field = hex_decode(parts.next()?)?;
+        Some((db, col, field))
     }
 
-    fn index_exists_key(&self, db: &str, collection: &str, field: &str) -> String {
-        format!("{}:{}:{}:{}:{}", self.prefix, cache_key_segment(db), cache_key_segment(collection), cache_key_segment(field), "exists")
+    fn is_eligible_field(field: &str) -> bool {
+        !field.is_empty() && field != "_id" && !field.starts_with('$') && !field.contains(".$")
     }
 
-    /// Registra que un campo fue usado en una query (para análisis de patrones).
-    async fn record_query_field(&self, db: &str, collection: &str, field: &str) {
+    fn index_name(field: &str) -> String {
+        format!("{AUTOINDEX_NAME_PREFIX}{field}")
+    }
+
+    async fn scan_keys(&self, pattern: &str) -> Vec<String> {
         let mut conn = self.connection.clone();
-        let stats_key = self.stats_key(db, collection, field);
-        let last_key = self.last_used_key(db, collection, field);
+        let mut cursor = "0".to_string();
+        let mut out = Vec::new();
+        loop {
+            let (next, keys): (String, Vec<String>) = match redis::cmd("SCAN")
+                .arg(&cursor)
+                .arg("MATCH")
+                .arg(pattern)
+                .arg("COUNT")
+                .arg(500)
+                .query_async(&mut conn)
+                .await
+            {
+                Ok(r) => r,
+                Err(_) => break,
+            };
+            out.extend(keys);
+            if next == "0" {
+                break;
+            }
+            cursor = next;
+        }
+        out
+    }
+
+    async fn get_meta(&self, db: &str, collection: &str, field: &str) -> Option<AutoIndexMeta> {
+        let mut conn = self.connection.clone();
+        let raw: Option<String> = conn.get(self.key(db, collection, field, "exists")).await.ok()?;
+        let raw = raw?;
+        if raw == "1" {
+            // Formato anterior: el índice se creó con el nombre por defecto `<campo>_1`.
+            // Se le da un periodo de gracia completo desde ahora.
+            return Some(AutoIndexMeta { name: format!("{field}_1"), created: now_ms() / 1000, external: false });
+        }
+        serde_json::from_str(&raw).ok()
+    }
+
+    async fn set_meta(&self, db: &str, collection: &str, field: &str, meta: &AutoIndexMeta) {
+        let mut conn = self.connection.clone();
+        let raw = serde_json::to_string(meta).unwrap_or_default();
+        let _: Result<(), _> = conn.set(self.key(db, collection, field, "exists"), raw).await;
+    }
+
+    /// Borra todos los metadatos del campo y su índice secundario en Redis.
+    async fn forget_field(&self, index_mgr: &RedisIndexManager, db: &str, collection: &str, field: &str) {
+        let mut conn = self.connection.clone();
+        let _: Result<(), _> = redis::cmd("DEL")
+            .arg(self.key(db, collection, field, "exists"))
+            .arg(self.key(db, collection, field, "queries"))
+            .arg(self.key(db, collection, field, "last_used"))
+            .arg(self.key(db, collection, field, "rejected"))
+            .query_async(&mut conn)
+            .await;
+        index_mgr.drop_field_indexes(db, collection, field).await;
+    }
+
+    /// Estado de un campo para el panel: metadatos, consultas en la ventana y último uso.
+    async fn describe_field(&self, db: &str, collection: &str, field: &str) -> Value {
+        let mut conn = self.connection.clone();
+        let meta = self.get_meta(db, collection, field).await;
+        let queries: u64 = conn
+            .get::<_, Option<u64>>(self.key(db, collection, field, "queries"))
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or(0);
+        let last_used: Option<u64> = conn
+            .get::<_, Option<String>>(self.key(db, collection, field, "last_used"))
+            .await
+            .ok()
+            .flatten()
+            .and_then(|v| v.parse().ok());
+        json!({
+            "managed": meta.is_some(),
+            "created": meta.as_ref().map(|m| m.created),
+            "external": meta.as_ref().map(|m| m.external).unwrap_or(false),
+            "queries_in_window": queries,
+            "window_secs": self.window_secs,
+            "threshold": self.threshold,
+            "last_used": last_used,
+            "drop_idle_secs": self.drop_idle_secs,
+            "review_secs": self.review_secs
+        })
+    }
+
+    /// Registra que un campo fue usado en una consulta.
+    async fn record_query_field(&self, db: &str, collection: &str, field: &str) {
+        if !Self::is_eligible_field(field) {
+            return;
+        }
+        let mut conn = self.connection.clone();
+        let stats_key = self.key(db, collection, field, "queries");
+        let last_key = self.key(db, collection, field, "last_used");
         let now = now_ms() / 1000;
+        // `last_used` vive más que `drop_idle_secs` para que la revisión pueda
+        // ver que el índice lleva inactivo más de ese tiempo.
+        let last_ttl = self.drop_idle_secs.saturating_mul(2).max(self.window_secs).max(60);
 
         let mut pipe = redis::pipe();
         pipe.atomic();
         pipe.incr(&stats_key, 1);
         pipe.expire(&stats_key, self.window_secs as i64);
         pipe.set(&last_key, now.to_string());
-        pipe.expire(&last_key, self.drop_idle_secs as i64);
+        pipe.expire(&last_key, last_ttl as i64);
         let _: Result<(), _> = pipe.query_async(&mut conn).await;
     }
 
-    /// Verifica si algún campo ha superado el umbral y necesita un índice.
+    /// Mide si un índice sobre `field` sería eficiente con los datos actuales.
+    /// Devuelve `Ok(Some(motivo))` si no lo es; `Err` si MongoDB no pudo responder
+    /// (en ese caso no se toma ninguna decisión).
+    async fn evaluate_efficiency(
+        &self,
+        mongo: &MongoConnectionInfo,
+        db: &str,
+        collection: &str,
+        field: &str,
+    ) -> Result<Option<String>, String> {
+        let col = mongo.client.database(db).collection::<Document>(collection);
+        let total = col
+            .estimated_document_count()
+            .await
+            .map_err(|e| format!("count failed: {e}"))?;
+        if total < self.min_docs {
+            return Ok(Some(format!("collection_too_small ({total} < {})", self.min_docs)));
+        }
+
+        let pipeline = vec![
+            doc! { "$sample": { "size": self.sample_size.max(1) as i64 } },
+            doc! { "$group": { "_id": format!("${field}"), "n": { "$sum": 1_i32 } } },
+        ];
+        let mut cursor = col
+            .aggregate(pipeline)
+            .await
+            .map_err(|e| format!("sample failed: {e}"))?;
+        let mut counts: Vec<f64> = Vec::new();
+        let mut sampled = 0f64;
+        while let Some(row) = cursor.next().await {
+            let row = row.map_err(|e| format!("sample cursor failed: {e}"))?;
+            let n = match row.get("n") {
+                Some(mongodb::bson::Bson::Int32(v)) => *v as f64,
+                Some(mongodb::bson::Bson::Int64(v)) => *v as f64,
+                Some(mongodb::bson::Bson::Double(v)) => *v,
+                _ => 0.0,
+            };
+            sampled += n;
+            // Campo ausente o null: no aporta a la selectividad.
+            if !matches!(row.get("_id"), None | Some(mongodb::bson::Bson::Null)) {
+                counts.push(n);
+            }
+        }
+
+        let present: f64 = counts.iter().sum();
+        if sampled == 0.0 || present == 0.0 {
+            return Ok(Some("field_absent".to_string()));
+        }
+        if counts.len() <= 1 {
+            return Ok(Some("single_value".to_string()));
+        }
+        // Fracción esperada de documentos que devuelve una igualdad sobre el campo.
+        let expected_match: f64 = counts.iter().map(|n| (n / present).powi(2)).sum();
+        if expected_match > self.max_match_ratio {
+            return Ok(Some(format!(
+                "low_selectivity (match {:.3} > {:.3}, {} valores en {} docs)",
+                expected_match,
+                self.max_match_ratio,
+                counts.len(),
+                sampled as u64
+            )));
+        }
+        Ok(None)
+    }
+
+    /// Busca en MongoDB un índice de un solo campo sobre `field`; devuelve su nombre.
+    async fn find_mongo_index(
+        mongo: &MongoConnectionInfo,
+        db: &str,
+        collection: &str,
+        field: &str,
+    ) -> Result<Option<String>, String> {
+        let mut cursor = mongo
+            .client
+            .database(db)
+            .collection::<Document>(collection)
+            .list_indexes()
+            .await
+            .map_err(|e| format!("list_indexes failed: {e}"))?;
+        while let Some(model) = cursor.next().await {
+            let model = model.map_err(|e| format!("list_indexes cursor failed: {e}"))?;
+            if model.keys.len() == 1 && model.keys.contains_key(field) {
+                let name = model.options.and_then(|o| o.name).unwrap_or_default();
+                return Ok(Some(name));
+            }
+        }
+        Ok(None)
+    }
+
+    /// Crea índices para los campos que superaron el umbral de consultas.
     async fn check_and_create_indexes(
         &self,
         mongo: &MongoConnectionInfo,
-        index_mgr: &RedisIndexManager,
         db: &str,
         collection: &str,
     ) {
+        let pattern = format!(
+            "{}:{}:{}:*:queries",
+            self.prefix,
+            cache_key_segment(db),
+            cache_key_segment(collection)
+        );
         let mut conn = self.connection.clone();
-        let pattern = format!("{}:{}:{}:*:queries", self.prefix, cache_key_segment(db), cache_key_segment(collection));
-
-        let mut cursor = "0".to_string();
-        let mut to_create = Vec::new();
-
-        loop {
-            let (next, keys): (String, Vec<String>) = match redis::cmd("SCAN")
-                .arg(&cursor)
-                .arg("MATCH")
-                .arg(&pattern)
-                .arg("COUNT")
-                .arg(100)
-                .query_async(&mut conn)
-                .await
-            {
-                Ok(r) => r,
-                Err(_) => break,
-            };
-
-            for key in keys {
-                if let Ok(count) = conn.get::<_, u64>(&key).await {
-                    if count >= self.threshold {
-                        // Extraer field del key
-                        let parts: Vec<&str> = key.split(':').collect();
-                        if parts.len() >= 5 {
-                            let field_hex = parts[parts.len() - 2];
-                            // Decodificar hex a string (simplificado)
-                            if let Ok(field_bytes) = (0..field_hex.len())
-                                .step_by(2)
-                                .map(|i| u8::from_str_radix(&field_hex[i..i+2], 16))
-                                .collect::<Result<Vec<u8>, _>>()
-                            {
-                                if let Ok(field) = String::from_utf8(field_bytes) {
-                                    let exists_key = self.index_exists_key(db, collection, &field);
-                                    if let Ok(exists) = conn.exists::<_, bool>(&exists_key).await {
-                                        if !exists {
-                                            to_create.push(field);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+        for key in self.scan_keys(&pattern).await {
+            let Some((_, _, field)) = self.parse_key(&key) else { continue };
+            if !Self::is_eligible_field(&field) {
+                continue;
             }
-
-            if next == "0" {
-                break;
+            let count: u64 = conn.get(&key).await.unwrap_or(0);
+            if count < self.threshold {
+                continue;
             }
-            cursor = next;
-        }
-
-        for field in to_create {
-            self.create_index(mongo, index_mgr, db, collection, &field).await;
+            let exists: bool = conn.exists(self.key(db, collection, &field, "exists")).await.unwrap_or(true);
+            let rejected: bool = conn.exists(self.key(db, collection, &field, "rejected")).await.unwrap_or(true);
+            if exists || rejected {
+                continue;
+            }
+            self.create_index(mongo, db, collection, &field).await;
         }
     }
 
-    /// Crea un índice tanto en MongoDB como en Redis.
+    /// Crea el índice en MongoDB si es eficiente.
     async fn create_index(
         &self,
         mongo: &MongoConnectionInfo,
-        index_mgr: &RedisIndexManager,
         db: &str,
         collection: &str,
         field: &str,
     ) {
+        match self.evaluate_efficiency(mongo, db, collection, field).await {
+            Ok(Some(reason)) => {
+                log_line(
+                    LogLevel::Info,
+                    "autoindex_rejected",
+                    Some(json!({ "database_name": db, "collection": collection, "field": field, "reason": reason })),
+                );
+                // No se vuelve a evaluar hasta la siguiente revisión.
+                let mut conn = self.connection.clone();
+                let _: Result<(), _> = conn
+                    .set_ex(self.key(db, collection, field, "rejected"), reason, self.review_secs.max(60))
+                    .await;
+                return;
+            }
+            Ok(None) => {}
+            Err(e) => {
+                log_line(
+                    LogLevel::Warn,
+                    "autoindex_evaluate_failed",
+                    Some(json!({ "database_name": db, "collection": collection, "field": field, "error": e })),
+                );
+                return;
+            }
+        }
+
+        let now = now_ms() / 1000;
+        let meta = match Self::find_mongo_index(mongo, db, collection, field).await {
+            Ok(Some(existing)) => AutoIndexMeta {
+                external: !existing.starts_with(AUTOINDEX_NAME_PREFIX),
+                name: existing,
+                created: now,
+            },
+            Ok(None) => {
+                let name = Self::index_name(field);
+                let model = IndexModel::builder()
+                    .keys(doc! { field: 1_i32 })
+                    .options(IndexOptions::builder().name(name.clone()).build())
+                    .build();
+                if let Err(e) = mongo
+                    .client
+                    .database(db)
+                    .collection::<Document>(collection)
+                    .create_index(model)
+                    .await
+                {
+                    log_line(
+                        LogLevel::Warn,
+                        "autoindex_mongo_failed",
+                        Some(json!({ "database_name": db, "collection": collection, "field": field, "error": e.to_string() })),
+                    );
+                    return;
+                }
+                AutoIndexMeta { name, created: now, external: false }
+            }
+            Err(e) => {
+                log_line(
+                    LogLevel::Warn,
+                    "autoindex_mongo_failed",
+                    Some(json!({ "database_name": db, "collection": collection, "field": field, "error": e })),
+                );
+                return;
+            }
+        };
+
         log_line(
             LogLevel::Info,
             "autoindex_create",
             Some(json!({
                 "database_name": db,
                 "collection": collection,
-                "field": field
+                "field": field,
+                "index_name": meta.name,
+                "external": meta.external
             })),
         );
-
-        // 1. Crear índice en MongoDB (background)
-        let mongo_db = mongo.client.database(db);
-        let idx_model = IndexModel::builder()
-            .keys(doc! { field: 1 })
-            .build();
-        if let Err(e) = mongo_db.collection::<Document>(collection).create_index(idx_model).await {
-            log_line(LogLevel::Warn, "autoindex_mongo_failed", Some(json!({"error": e.to_string()})));
-        }
-
-        // 2. Marcar como existente en Redis
-        let mut conn = self.connection.clone();
-        let exists_key = self.index_exists_key(db, collection, field);
-        let _: Result<(), _> = conn.set(&exists_key, "1").await;
-
-        // 3. Indexar documentos existentes en Redis detectando el tipo real
-        if let Ok(database) = load_database(mongo, db).await {
-            if let Some(docs) = database.collections.get(collection) {
-                let idx_type = Self::detect_index_type_for_field(docs, field);
-                log_line(
-                    LogLevel::Debug,
-                    "autoindex_detected_type",
-                    Some(json!({
-                        "database_name": db,
-                        "collection": collection,
-                        "field": field,
-                        "index_type": format!("{:?}", idx_type)
-                    })),
-                );
-                for doc in docs {
-                    index_mgr.index_document(db, collection, doc, &[(field.to_string(), idx_type.clone())]).await;
-                }
-            }
-        }
+        self.set_meta(db, collection, field, &meta).await;
     }
 
-    /// Detecta el mejor IndexType para un campo dado analizando documentos existentes.
-    fn detect_index_type_for_field(docs: &[Value], field: &str) -> IndexType {
-        use std::collections::HashSet;
-        let mut numeric_count = 0usize;
-        let mut string_count = 0usize;
-        let mut array_count = 0usize;
-        let mut object_count = 0usize;
-        let mut total = 0usize;
-        let mut string_values = HashSet::new();
-        let mut has_duplicates = false;
-
-        for doc in docs.iter().take(500) {
-            if let Some(val) = get_nested_value(doc, field) {
-                total += 1;
-                match val {
-                    Value::Number(_) => numeric_count += 1,
-                    Value::String(s) => {
-                        string_count += 1;
-                        if !string_values.insert(s.clone()) {
-                            has_duplicates = true;
-                        }
-                    }
-                    Value::Array(_) => array_count += 1,
-                    Value::Object(_) => object_count += 1,
-                    _ => {}
-                }
-            }
-        }
-
-        if total == 0 {
-            return IndexType::Tag;
-        }
-
-        // Campo mayormente numérico → índice Numeric (ZSET ordenado por score)
-        if numeric_count * 10 >= total * 8 {
-            return IndexType::Numeric;
-        }
-
-        // Campo con arrays (tags) → Tag (índice SET flexible)
-        if array_count > 0 {
-            return IndexType::Tag;
-        }
-
-        // Campo de strings únicos sin duplicados → String (SET único, más eficiente)
-        if string_count * 10 >= total * 7 && !has_duplicates {
-            return IndexType::String;
-        }
-
-        // Campo mixto o compuesto → Compound (usa hash como score en ZSET)
-        if (numeric_count > 0 && string_count > 0) || object_count > 0 {
-            return IndexType::Compound;
-        }
-
-        IndexType::Tag
-    }
-
-    /// Elimina índices que no se han usado en el período configurado.
-    async fn drop_idle_indexes(
+    /// Revisión periódica de una colección:
+    /// 1. adopta índices `mdb_auto_*` de MongoDB sin metadatos (p. ej. tras reiniciar
+    ///    Dragonfly, que no persiste, o tras renombrar la colección);
+    /// 2. elimina índices sin uso durante `drop_idle_secs`;
+    /// 3. elimina índices que ya no son eficientes con los datos actuales;
+    /// 4. olvida metadatos de índices que ya no existen en MongoDB.
+    async fn review_collection(
         &self,
         mongo: &MongoConnectionInfo,
         index_mgr: &RedisIndexManager,
         db: &str,
         collection: &str,
     ) {
-        let mut conn = self.connection.clone();
-        let pattern = format!("{}:{}:{}:*:last_used", self.prefix, cache_key_segment(db), cache_key_segment(collection));
         let now = now_ms() / 1000;
-        let mut to_drop = Vec::new();
 
-        let mut cursor = "0".to_string();
-        loop {
-            let (next, keys): (String, Vec<String>) = match redis::cmd("SCAN")
-                .arg(&cursor)
-                .arg("MATCH")
-                .arg(&pattern)
-                .arg("COUNT")
-                .arg(100)
-                .query_async(&mut conn)
-                .await
-            {
-                Ok(r) => r,
-                Err(_) => break,
-            };
-
-            for key in keys {
-                if let Ok(last_used_str) = conn.get::<_, String>(&key).await {
-                    if let Ok(last_used) = last_used_str.parse::<u64>() {
-                        if now.saturating_sub(last_used) > self.drop_idle_secs {
-                            let parts: Vec<&str> = key.split(':').collect();
-                            if parts.len() >= 5 {
-                                let field_hex = parts[parts.len() - 2];
-                                if let Ok(field_bytes) = (0..field_hex.len())
-                                    .step_by(2)
-                                    .map(|i| u8::from_str_radix(&field_hex[i..i+2], 16))
-                                    .collect::<Result<Vec<u8>, _>>()
-                                {
-                                    if let Ok(field) = String::from_utf8(field_bytes) {
-                                        to_drop.push(field);
-                                    }
-                                }
-                            }
-                        }
+        // Índices actuales en MongoDB de un solo campo: nombre -> campo.
+        let mut mongo_indexes: HashMap<String, String> = HashMap::new();
+        match mongo.client.database(db).collection::<Document>(collection).list_indexes().await {
+            Ok(mut cursor) => {
+                while let Some(model) = cursor.next().await {
+                    let Ok(model) = model else { return };
+                    if model.keys.len() != 1 {
+                        continue;
                     }
+                    let Some(field) = model.keys.keys().next().cloned() else { continue };
+                    let name = model.options.and_then(|o| o.name).unwrap_or_default();
+                    mongo_indexes.insert(name, field);
                 }
             }
-
-            if next == "0" {
-                break;
+            Err(e) => {
+                log_line(
+                    LogLevel::Warn,
+                    "autoindex_review_failed",
+                    Some(json!({ "database_name": db, "collection": collection, "error": e.to_string() })),
+                );
+                return;
             }
-            cursor = next;
         }
 
-        for field in to_drop {
-            self.drop_index(mongo, index_mgr, db, collection, &field).await;
+        // 1. Adopción.
+        for (name, field) in &mongo_indexes {
+            if name.starts_with(AUTOINDEX_NAME_PREFIX) && self.get_meta(db, collection, field).await.is_none() {
+                log_line(
+                    LogLevel::Info,
+                    "autoindex_adopt",
+                    Some(json!({ "database_name": db, "collection": collection, "field": field, "index_name": name })),
+                );
+                self.set_meta(db, collection, field, &AutoIndexMeta { name: name.clone(), created: now, external: false })
+                    .await;
+            }
+        }
+
+        // 2-4. Revisión de cada índice gestionado.
+        let pattern = format!(
+            "{}:{}:{}:*:exists",
+            self.prefix,
+            cache_key_segment(db),
+            cache_key_segment(collection)
+        );
+        let mut conn = self.connection.clone();
+        for key in self.scan_keys(&pattern).await {
+            let Some((_, _, field)) = self.parse_key(&key) else { continue };
+            let Some(mut meta) = self.get_meta(db, collection, &field).await else { continue };
+            let raw: Option<String> = conn.get(&key).await.unwrap_or(None);
+            if raw.as_deref() == Some("1") {
+                // Migra el formato anterior.
+                self.set_meta(db, collection, &field, &meta).await;
+            }
+
+            if !mongo_indexes.contains_key(&meta.name) {
+                if meta.external {
+                    // El índice manual sobre el campo pudo renombrarse: buscarlo de nuevo.
+                    if let Some(name) = mongo_indexes.iter().find(|(_, f)| **f == field).map(|(n, _)| n.clone()) {
+                        meta.name = name;
+                        self.set_meta(db, collection, &field, &meta).await;
+                        continue;
+                    }
+                }
+                log_line(
+                    LogLevel::Info,
+                    "autoindex_forget_missing",
+                    Some(json!({ "database_name": db, "collection": collection, "field": field, "index_name": meta.name })),
+                );
+                self.forget_field(index_mgr, db, collection, &field).await;
+                continue;
+            }
+
+            let last_used: u64 = conn
+                .get::<_, Option<String>>(self.key(db, collection, &field, "last_used"))
+                .await
+                .ok()
+                .flatten()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0);
+            let last_activity = last_used.max(meta.created);
+            if now.saturating_sub(last_activity) > self.drop_idle_secs {
+                let idle = now.saturating_sub(last_activity);
+                self.drop_index(mongo, index_mgr, db, collection, &field, &meta, &format!("idle {idle}s"))
+                    .await;
+                continue;
+            }
+
+            match self.evaluate_efficiency(mongo, db, collection, &field).await {
+                Ok(Some(reason)) => {
+                    self.drop_index(mongo, index_mgr, db, collection, &field, &meta, &reason).await;
+                    // Evita recrearlo en el siguiente minuto.
+                    let _: Result<(), _> = conn
+                        .set_ex(self.key(db, collection, &field, "rejected"), reason, self.review_secs.max(60))
+                        .await;
+                }
+                Ok(None) => {}
+                Err(e) => log_line(
+                    LogLevel::Warn,
+                    "autoindex_evaluate_failed",
+                    Some(json!({ "database_name": db, "collection": collection, "field": field, "error": e })),
+                ),
+            }
         }
     }
 
+    /// Elimina un índice gestionado. Los índices externos (creados a mano) se
+    /// quedan en MongoDB; solo se olvidan sus metadatos y su índice en Redis.
+    #[allow(clippy::too_many_arguments)]
     async fn drop_index(
         &self,
         mongo: &MongoConnectionInfo,
@@ -1642,6 +1850,8 @@ impl AutoIndexManager {
         db: &str,
         collection: &str,
         field: &str,
+        meta: &AutoIndexMeta,
+        reason: &str,
     ) {
         log_line(
             LogLevel::Info,
@@ -1649,42 +1859,52 @@ impl AutoIndexManager {
             Some(json!({
                 "database_name": db,
                 "collection": collection,
-                "field": field
+                "field": field,
+                "index_name": meta.name,
+                "external": meta.external,
+                "reason": reason
             })),
         );
-
-        // 1. Drop en MongoDB
-        let mongo_db = mongo.client.database(db);
-        let _ = mongo_db.collection::<Document>(collection).drop_index(format!("{}_1", field)).await;
-
-        // 2. Limpiar keys de Redis
-        index_mgr.drop_collection_indexes(db, collection).await;
-
-        // 3. Limpiar metadatos
-        let mut conn = self.connection.clone();
-        let exists_key = self.index_exists_key(db, collection, field);
-        let stats_key = self.stats_key(db, collection, field);
-        let last_key = self.last_used_key(db, collection, field);
-        let _: Result<(), _> = redis::cmd("DEL").arg(&exists_key).arg(&stats_key).arg(&last_key).query_async(&mut conn).await;
+        if !meta.external {
+            if let Err(e) = mongo
+                .client
+                .database(db)
+                .collection::<Document>(collection)
+                .drop_index(meta.name.clone())
+                .await
+            {
+                log_line(
+                    LogLevel::Warn,
+                    "autoindex_drop_failed",
+                    Some(json!({ "database_name": db, "collection": collection, "field": field, "error": e.to_string() })),
+                );
+                return;
+            }
+        }
+        self.forget_field(index_mgr, db, collection, field).await;
     }
-}
 
-/// Extrae los nombres de campo top-level únicos presentes en un sample de documentos.
-fn collect_unique_sample_fields(docs: &[Value], sample_limit: usize) -> Vec<String> {
-    use std::collections::HashSet;
-    let mut seen: HashSet<String> = HashSet::new();
-    let mut ordered: Vec<String> = Vec::new();
-    for doc in docs.iter().take(sample_limit) {
-        if let Some(obj) = doc.as_object() {
-            for k in obj.keys() {
-                if !seen.contains(k) {
-                    seen.insert(k.clone());
-                    ordered.push(k.clone());
-                }
+    /// Borra metadatos e índices Redis de bases de datos o colecciones que ya no existen.
+    async fn sweep_orphans(&self, index_mgr: &RedisIndexManager, existing: &HashSet<(String, String)>) {
+        let pattern = format!("{}:*:exists", self.prefix);
+        let mut dropped_collections: HashSet<(String, String)> = HashSet::new();
+        for key in self.scan_keys(&pattern).await {
+            let Some((db, col, field)) = self.parse_key(&key) else { continue };
+            let pair = (db, col);
+            if existing.contains(&pair) {
+                continue;
+            }
+            log_line(
+                LogLevel::Info,
+                "autoindex_forget_orphan",
+                Some(json!({ "database_name": pair.0, "collection": pair.1, "field": field })),
+            );
+            self.forget_field(index_mgr, &pair.0, &pair.1, &field).await;
+            if dropped_collections.insert(pair.clone()) {
+                index_mgr.drop_collection_indexes(&pair.0, &pair.1).await;
             }
         }
     }
-    ordered
 }
 
 /// Reconstruye completamente los índices secundarios en Redis y repuebla el cache
@@ -1709,31 +1929,7 @@ async fn rebuild_collection_redis_state(
         return;
     }
 
-    // 2. Detectar campos presentes en los docs y su mejor tipo de índice
-    let fields = collect_unique_sample_fields(docs, 1000);
-    let field_idx_types: Vec<(String, IndexType)> = fields
-        .iter()
-        .map(|f| (f.clone(), AutoIndexManager::detect_index_type_for_field(docs, f)))
-        .collect();
-
-    // 3. Reindexar cada documento con TODOS sus campos tipificados
-    if let Some(idx) = index_mgr {
-        log_line(
-            LogLevel::Info,
-            "rebuild_collection_indexes_start",
-            Some(json!({
-                "database_name": db_name,
-                "collection": col_name,
-                "documents": docs.len(),
-                "fields": fields.len()
-            })),
-        );
-        for doc in docs {
-            idx.index_document(db_name, col_name, doc, &field_idx_types).await;
-        }
-    }
-
-    // 4. Repoblar cache de documentos (hash individual por doc)
+    // 2. Repoblar cache de documentos (hash individual por doc)
     if let Some(cache) = doc_cache {
         for doc in docs {
             if let Some(id_val) = doc.get("_id") {
@@ -2717,28 +2913,6 @@ fn match_filter(doc: &Value, filter: &Value) -> bool {
     true
 }
 
-fn sort_docs(docs: &mut Vec<Value>, sort: &Value) {
-    let Some(obj) = sort.as_object() else {
-        return;
-    };
-    docs.sort_by(|a, b| {
-        for (field, dir) in obj {
-            let va = get_nested_value(a, field);
-            let vb = get_nested_value(b, field);
-            let cmp = compare_values(va.as_ref(), vb.as_ref());
-            if cmp != 0 {
-                let d = dir.as_i64().unwrap_or(1);
-                return if d >= 0 {
-                    cmp.cmp(&0)
-                } else {
-                    cmp.cmp(&0).reverse()
-                };
-            }
-        }
-        std::cmp::Ordering::Equal
-    });
-}
-
 fn apply_projection(doc: &Value, projection: &Value) -> Value {
     let Some(obj) = projection.as_object() else {
         return doc.clone();
@@ -2750,7 +2924,8 @@ fn apply_projection(doc: &Value, projection: &Value) -> Value {
             .map(|v| v.as_bool().unwrap_or(false) || v.as_i64() == Some(1))
             .unwrap_or(false)
     });
-    let has_excludes = keys.iter().any(|k| {
+    // `_id: 0` es compatible con una proyección de inclusión (como en MongoDB).
+    let has_excludes = keys.iter().filter(|k| k.as_str() != "_id" || !has_includes).any(|k| {
         obj.get(*k)
             .map(|v| v.as_bool() == Some(false) || v.as_i64() == Some(0))
             .unwrap_or(false)
@@ -2760,7 +2935,7 @@ fn apply_projection(doc: &Value, projection: &Value) -> Value {
         let mut out = Value::Object(Map::new());
         let include_id = obj
             .get("_id")
-            .map(|v| v.as_bool().unwrap_or(true) || v.as_i64() == Some(1))
+            .map(|v| !(v.as_bool() == Some(false) || v.as_i64() == Some(0)))
             .unwrap_or(true);
         if include_id {
             if let Some(id) = doc.get("_id") {
@@ -2795,162 +2970,6 @@ fn apply_projection(doc: &Value, projection: &Value) -> Value {
     doc.clone()
 }
 
-fn apply_update_operators(doc: &mut Value, update: &Value) -> bool {
-    let mut modified = false;
-    let Some(obj) = update.as_object() else {
-        return false;
-    };
-
-    for (op, val) in obj {
-        match op.as_str() {
-            "$set" => {
-                let Some(set_obj) = val.as_object() else {
-                    continue;
-                };
-                for (k, v) in set_obj {
-                    set_nested_value(doc, k, v.clone());
-                    modified = true;
-                }
-            }
-            "$unset" => {
-                let Some(unset_obj) = val.as_object() else {
-                    continue;
-                };
-                for k in unset_obj.keys() {
-                    unset_nested_value(doc, k);
-                    modified = true;
-                }
-            }
-            "$inc" => {
-                let Some(inc_obj) = val.as_object() else {
-                    continue;
-                };
-                for (k, v) in inc_obj {
-                    let cur = get_nested_value(doc, k)
-                        .and_then(|c| c.as_f64())
-                        .unwrap_or(0.0);
-                    let add = v.as_f64().unwrap_or(0.0);
-                    set_nested_value(
-                        doc,
-                        k,
-                        Value::Number(Number::from_f64(cur + add).unwrap_or(Number::from(0))),
-                    );
-                    modified = true;
-                }
-            }
-            "$mul" => {
-                let Some(mul_obj) = val.as_object() else {
-                    continue;
-                };
-                for (k, v) in mul_obj {
-                    let cur = get_nested_value(doc, k)
-                        .and_then(|c| c.as_f64())
-                        .unwrap_or(0.0);
-                    let factor = v.as_f64().unwrap_or(0.0);
-                    set_nested_value(
-                        doc,
-                        k,
-                        Value::Number(Number::from_f64(cur * factor).unwrap_or(Number::from(0))),
-                    );
-                    modified = true;
-                }
-            }
-            "$push" => {
-                let Some(push_obj) = val.as_object() else {
-                    continue;
-                };
-                for (k, v) in push_obj {
-                    let current = get_nested_value(doc, k).unwrap_or(Value::Array(vec![]));
-                    let mut arr = match current {
-                        Value::Array(a) => a,
-                        _ => vec![],
-                    };
-                    if let Some(each_obj) = v.as_object() {
-                        if let Some(items) = each_obj.get("$each").and_then(|x| x.as_array()) {
-                            for item in items {
-                                arr.push(item.clone());
-                            }
-                        } else {
-                            arr.push(v.clone());
-                        }
-                    } else {
-                        arr.push(v.clone());
-                    }
-                    set_nested_value(doc, k, Value::Array(arr));
-                    modified = true;
-                }
-            }
-            "$pull" => {
-                let Some(pull_obj) = val.as_object() else {
-                    continue;
-                };
-                for (k, v) in pull_obj {
-                    let current = get_nested_value(doc, k).unwrap_or(Value::Array(vec![]));
-                    let mut arr = match current {
-                        Value::Array(a) => a,
-                        _ => vec![],
-                    };
-                    let before = arr.len();
-                    if v.is_object() {
-                        arr.retain(|item| !match_filter(item, v));
-                    } else {
-                        arr.retain(|item| item != v);
-                    }
-                    if arr.len() != before {
-                        set_nested_value(doc, k, Value::Array(arr));
-                        modified = true;
-                    }
-                }
-            }
-            "$addToSet" => {
-                let Some(add_obj) = val.as_object() else {
-                    continue;
-                };
-                for (k, v) in add_obj {
-                    let current = get_nested_value(doc, k).unwrap_or(Value::Array(vec![]));
-                    let mut arr = match current {
-                        Value::Array(a) => a,
-                        _ => vec![],
-                    };
-                    let items = if let Some(each_obj) = v.as_object() {
-                        if let Some(items) = each_obj.get("$each").and_then(|x| x.as_array()) {
-                            items.clone()
-                        } else {
-                            vec![v.clone()]
-                        }
-                    } else {
-                        vec![v.clone()]
-                    };
-                    for it in items {
-                        if !arr
-                            .iter()
-                            .any(|existing| value_eq(Some(existing), Some(&it)))
-                        {
-                            arr.push(it);
-                            modified = true;
-                        }
-                    }
-                    set_nested_value(doc, k, Value::Array(arr));
-                }
-            }
-            "$rename" => {
-                let Some(ren_obj) = val.as_object() else {
-                    continue;
-                };
-                for (k, new_k) in ren_obj {
-                    if let Some(cur) = get_nested_value(doc, k) {
-                        let new_key = new_k.as_str().unwrap_or(k);
-                        set_nested_value(doc, new_key, cur);
-                        unset_nested_value(doc, k);
-                        modified = true;
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-    modified
-}
 
 // =============================================================================
 // EXTRACCIÓN DE PARÁMETROS
@@ -3070,7 +3089,7 @@ async fn handle_database_action(
                 cache.invalidate_database(db_name).await;
             }
             if let Some(idx) = index_mgr {
-                let pattern = format!("{}:*:{}:*", INDEX_PREFIX, cache_key_segment(db_name));
+                let pattern = format!("{}:{}:*", INDEX_PREFIX, cache_key_segment(db_name));
                 let mut conn = idx.connection.clone();
                 let _ = clear_keys(&mut conn, &pattern).await;
             }
@@ -3110,6 +3129,11 @@ async fn handle_database_action(
 
             if let Some(cache) = doc_cache {
                 cache.invalidate_database(from).await;
+            }
+            if let Some(idx) = index_mgr {
+                let pattern = format!("{}:{}:*", INDEX_PREFIX, cache_key_segment(from));
+                let mut conn = idx.connection.clone();
+                let _ = clear_keys(&mut conn, &pattern).await;
             }
 
             emitter.emit(
@@ -3209,6 +3233,9 @@ async fn handle_database_action(
             if let Some(cache) = doc_cache {
                 cache.invalidate_collection(db_name, from).await;
             }
+            if let Some(idx) = index_mgr {
+                idx.drop_collection_indexes(db_name, from).await;
+            }
 
             emitter.emit(
                 "database",
@@ -3273,66 +3300,48 @@ async fn handle_database_action(
             }
 
             let existed = database_exists(mongo, db_name).await?;
-            let mut database = if existed {
-                load_database(mongo, db_name).await?
-            } else {
-                Database {
-                    collections: HashMap::new(),
-                }
-            };
-
-            let mut imported_collections = 0usize;
-            let mut imported_docs = 0usize;
-
-            match mode {
-                "merge" => {
-                    for (col, docs) in incoming {
-                        imported_collections += 1;
-                        let target = database.collections.entry(col).or_insert_with(Vec::new);
-                        for doc in docs {
-                            imported_docs += 1;
-                            match doc.get("_id").cloned() {
-                                Some(id) => {
-                                    if let Some(idx) = target
-                                        .iter()
-                                        .position(|d| value_eq(d.get("_id"), Some(&id)))
-                                    {
-                                        target[idx] = doc;
-                                    } else {
-                                        target.push(doc);
-                                    }
-                                }
-                                None => target.push(doc),
-                            }
-                        }
-                    }
-                }
-                _ => {
-                    database.collections.clear();
-                    for (col, docs) in incoming {
-                        imported_collections += 1;
-                        imported_docs += docs.len();
-                        database.collections.insert(col, docs);
+            let merge = mode == "merge";
+            if existed && !merge {
+                // replace: las colecciones que no vienen en el import se eliminan.
+                for existing in list_collection_names(mongo, db_name).await? {
+                    if !incoming.contains_key(&existing) {
+                        write_collection(mongo, db_name, &existing)
+                            .drop()
+                            .await
+                            .map_err(|e| format!("Could not drop collection '{db_name}.{existing}': {e}"))?;
                     }
                 }
             }
 
-            save_database(mongo, db_name, &database).await?;
+            let mut imported_collections = 0usize;
+            let mut imported_docs = 0usize;
+            for (col, docs) in &incoming {
+                imported_collections += 1;
+                imported_docs += docs.len();
+                let refs: Vec<&Value> = docs.iter().collect();
+                let coll = write_collection(mongo, db_name, col);
+                import_into_collection(&coll, db_name, col, if merge { "merge" } else { "replace" }, &refs)
+                    .await?;
+            }
+            if incoming.is_empty() {
+                ensure_database_exists(mongo, db_name).await?;
+            } else {
+                let _ = mongo
+                    .client
+                    .database(db_name)
+                    .collection::<Document>(BOOTSTRAP_COLLECTION)
+                    .drop()
+                    .await;
+            }
 
-            // Invalidación completa y regeneración de estado Redis por colección
+            // Invalidación y Write-Through de lo importado por colección
             if doc_cache.is_some() || index_mgr.is_some() {
-                // En modo replace, invalidamos TAMBIEN db-level para cubrir colecciones
-                // que ya no existen en el payload.
-                if mode != "merge" {
+                if !merge {
                     if let Some(cache) = doc_cache {
                         cache.invalidate_database(db_name).await;
                     }
                 }
-                // Reconstruimos estado Redis de cada coleccion resultante
-                for (col_name, docs) in &database.collections {
-                    if is_reserved_collection(col_name) {
-                        continue;
-                    }
+                for (col_name, docs) in &incoming {
                     rebuild_collection_redis_state(
                         db_name,
                         col_name,
@@ -3383,11 +3392,541 @@ async fn handle_database_action(
     result
 }
 
-/// Resuelve documentos usando Redis primero. Si hay índices, los usa. Si no, fallback a MongoDB.
+// -----------------------------------------------------------------------------
+// Traducción de filtros a MongoDB
+//
+// Las consultas se resuelven en MongoDB (que usa sus índices, incluidos los
+// autoíndices). La traducción conserva la semántica que tenía `match_filter`:
+// - un texto de 24 hex o {"$oid": ...} coincide tanto con ObjectId como con el texto;
+// - `$exists: true` exige además que el valor no sea null;
+// - `$nin` no coincide con documentos sin el campo;
+// - `$not` en el nivel superior equivale a `$nor`.
+// -----------------------------------------------------------------------------
+
+/// Claves de JSON extendido que representan un valor (no un operador de consulta).
+const EXTENDED_JSON_KEYS: &[&str] = &[
+    "$oid",
+    "$date",
+    "$numberLong",
+    "$numberInt",
+    "$numberDouble",
+    "$numberDecimal",
+    "$binary",
+    "$timestamp",
+    "$regularExpression",
+    "$symbol",
+    "$code",
+    "$minKey",
+    "$maxKey",
+    "$undefined",
+];
+
+fn is_extended_json_value(v: &Value) -> bool {
+    v.as_object()
+        .map(|o| !o.is_empty() && o.keys().any(|k| EXTENDED_JSON_KEYS.contains(&k.as_str())))
+        .unwrap_or(false)
+}
+
+/// Variantes con las que un valor ObjectId puede estar guardado.
+fn object_id_variants(v: &Value) -> Option<Vec<Value>> {
+    let hex = value_as_object_id_text(v)?;
+    let mut out = vec![json!({ "$oid": hex }), Value::String(hex.clone())];
+    if let Value::String(original) = v {
+        if *original != hex {
+            out.push(v.clone());
+        }
+    }
+    Some(out)
+}
+
+fn expand_values(values: &[Value]) -> Vec<Value> {
+    let mut out = Vec::with_capacity(values.len());
+    for v in values {
+        match object_id_variants(v) {
+            Some(variants) => out.extend(variants),
+            None => out.push(v.clone()),
+        }
+    }
+    out
+}
+
+/// Condición que nunca coincide (equivale al `false` de `match_filter`).
+fn never_match() -> Value {
+    json!({ "$expr": false })
+}
+
+fn single_condition(field: &str, cond: Value) -> Value {
+    let mut m = Map::new();
+    m.insert(field.to_string(), cond);
+    Value::Object(m)
+}
+
+fn eq_condition(field: &str, v: &Value) -> Value {
+    match object_id_variants(v) {
+        Some(variants) => single_condition(field, json!({ "$in": variants })),
+        None => single_condition(field, v.clone()),
+    }
+}
+
+fn translate_field_condition(field: &str, qv: &Value, out: &mut Vec<Value>) {
+    if !is_operator_object(qv) || is_extended_json_value(qv) {
+        out.push(eq_condition(field, qv));
+        return;
+    }
+    let ops = qv.as_object().expect("operator object");
+    for (op, ov) in ops {
+        match op.as_str() {
+            "$eq" => out.push(eq_condition(field, ov)),
+            "$ne" => match object_id_variants(ov) {
+                Some(variants) => out.push(single_condition(field, json!({ "$nin": variants }))),
+                None => out.push(single_condition(field, json!({ "$ne": ov }))),
+            },
+            "$in" => match ov.as_array() {
+                Some(arr) => out.push(single_condition(field, json!({ "$in": expand_values(arr) }))),
+                None => out.push(never_match()),
+            },
+            "$nin" => match ov.as_array() {
+                Some(arr) => {
+                    out.push(single_condition(field, json!({ "$exists": true })));
+                    out.push(single_condition(field, json!({ "$nin": expand_values(arr) })));
+                }
+                None => out.push(never_match()),
+            },
+            "$exists" => {
+                if ov.as_bool().unwrap_or(true) {
+                    out.push(single_condition(field, json!({ "$exists": true, "$ne": Value::Null })));
+                } else {
+                    out.push(single_condition(field, Value::Null));
+                }
+            }
+            "$regex" => {
+                let mut cond = Map::new();
+                cond.insert("$regex".into(), Value::String(json_to_string(ov)));
+                if let Some(options) = ops.get("$options") {
+                    cond.insert("$options".into(), options.clone());
+                }
+                out.push(single_condition(field, Value::Object(cond)));
+            }
+            "$options" => {}
+            _ => out.push(single_condition(field, json!({ op.clone(): ov }))),
+        }
+    }
+}
+
+/// Traduce un filtro JSON del protocolo a un filtro equivalente de MongoDB.
+fn translate_filter(filter: &Value) -> Value {
+    let Some(obj) = filter.as_object() else {
+        return Value::Object(Map::new());
+    };
+    let mut conditions: Vec<Value> = Vec::new();
+    for (k, v) in obj {
+        match k.as_str() {
+            "$and" | "$or" | "$nor" => match v.as_array() {
+                Some(arr) if !(k == "$or" && arr.is_empty()) => {
+                    let items: Vec<Value> = arr.iter().map(translate_filter).collect();
+                    if items.is_empty() {
+                        // $and/$nor vacíos no restringen nada.
+                        continue;
+                    }
+                    conditions.push(json!({ k.clone(): items }));
+                }
+                _ => conditions.push(never_match()),
+            },
+            "$not" => conditions.push(json!({ "$nor": [translate_filter(v)] })),
+            _ if k.starts_with('$') => conditions.push(single_condition(k, v.clone())),
+            _ => translate_field_condition(k, v, &mut conditions),
+        }
+    }
+    match conditions.len() {
+        0 => Value::Object(Map::new()),
+        1 => conditions.pop().unwrap(),
+        _ => json!({ "$and": conditions }),
+    }
+}
+
+// =============================================================================
+// ESCRITURAS NATIVAS EN MONGODB + WRITE-THROUGH
+// =============================================================================
+
+/// Write concern de todas las escrituras. Por defecto `w: majority` con journal (§8.3, §9.3).
+/// `MICROSERVICEDB_MONGODB_WRITE_CONCERN`: `majority` (defecto) o un número de nodos.
+/// `MICROSERVICEDB_MONGODB_JOURNAL`: `true` (defecto) o `false`.
+fn write_concern() -> WriteConcern {
+    static WC: OnceLock<WriteConcern> = OnceLock::new();
+    WC.get_or_init(|| {
+        let w = match env::var("MICROSERVICEDB_MONGODB_WRITE_CONCERN") {
+            Ok(v) => match v.trim().parse::<u32>() {
+                Ok(n) => Acknowledgment::Nodes(n),
+                Err(_) if v.trim().eq_ignore_ascii_case("majority") || v.trim().is_empty() => {
+                    Acknowledgment::Majority
+                }
+                Err(_) => Acknowledgment::Custom(v.trim().to_string()),
+            },
+            Err(_) => Acknowledgment::Majority,
+        };
+        let journal = env::var("MICROSERVICEDB_MONGODB_JOURNAL")
+            .map(|v| !matches!(v.trim().to_ascii_lowercase().as_str(), "false" | "0" | "no"))
+            .unwrap_or(true);
+        WriteConcern::builder().w(w).journal(journal).build()
+    })
+    .clone()
+}
+
+fn write_collection(
+    mongo: &MongoConnectionInfo,
+    db_name: &str,
+    col_name: &str,
+) -> mongodb::Collection<Document> {
+    mongo.client.database(db_name).collection_with_options::<Document>(
+        col_name,
+        CollectionOptions::builder().write_concern(write_concern()).build(),
+    )
+}
+
+async fn require_database(mongo: &MongoConnectionInfo, db_name: &str) -> Result<(), String> {
+    if database_exists(mongo, db_name).await? {
+        Ok(())
+    } else {
+        Err(format!("Database '{}' not found", db_name))
+    }
+}
+
+fn value_to_bson(value: &Value) -> Result<Bson, String> {
+    let mut d = value_to_document(&json!({ "v": value }))?;
+    d.remove("v").ok_or_else(|| "Invalid BSON value".to_string())
+}
+
+fn bson_to_value(value: &Bson) -> Value {
+    serde_json::to_value(value).unwrap_or(Value::Null)
+}
+
+/// Filtro del protocolo traducido a MongoDB (mismas reglas que `find`).
+fn bson_filter(filter: &Value) -> Result<Document, String> {
+    value_to_document(&translate_filter(filter))
+}
+
+fn id_filter_of(doc: &Value) -> Result<Document, String> {
+    let id = doc.get("_id").ok_or("document without _id")?;
+    Ok(doc! { "_id": value_to_bson(id)? })
+}
+
+async fn find_one_raw(
+    coll: &mongodb::Collection<Document>,
+    filter: Document,
+) -> Result<Option<Value>, String> {
+    coll.find_one(filter)
+        .await
+        .map_err(|e| format!("MongoDB findOne failed: {e}"))?
+        .map(document_to_value)
+        .transpose()
+}
+
+async fn find_many_raw(
+    coll: &mongodb::Collection<Document>,
+    filter: Document,
+) -> Result<Vec<Value>, String> {
+    let mut cursor = coll
+        .find(filter)
+        .await
+        .map_err(|e| format!("MongoDB find failed: {e}"))?;
+    let mut out = Vec::new();
+    while let Some(res) = cursor.next().await {
+        out.push(document_to_value(res.map_err(|e| format!("MongoDB cursor error: {e}"))?)?);
+    }
+    Ok(out)
+}
+
+/// Write-Through: tras confirmar la escritura en MongoDB, el documento resultante se guarda en
+/// Dragonfly (TTL de la caché de documentos) y se actualiza el índice por `_id`.
+async fn write_through_set(
+    index_mgr: &Option<RedisIndexManager>,
+    doc_cache: &Option<RedisDocumentCache>,
+    db_name: &str,
+    col_name: &str,
+    before: Option<&Value>,
+    after: &Value,
+) {
+    let idx_defs = vec![(String::from("_id"), IndexType::Tag)];
+    if let (Some(idx), Some(b)) = (index_mgr, before) {
+        idx.unindex_document(db_name, col_name, b, &idx_defs).await;
+    }
+    if after.is_null() {
+        return;
+    }
+    if let Some(idx) = index_mgr {
+        idx.index_document(db_name, col_name, after, &idx_defs).await;
+    }
+    if let (Some(cache), Some(id)) = (doc_cache, after.get("_id")) {
+        cache.set_doc(db_name, col_name, &json_to_string(id), after).await;
+    }
+}
+
+async fn write_through_delete(
+    index_mgr: &Option<RedisIndexManager>,
+    doc_cache: &Option<RedisDocumentCache>,
+    db_name: &str,
+    col_name: &str,
+    before: &Value,
+) {
+    if let Some(idx) = index_mgr {
+        let idx_defs = vec![(String::from("_id"), IndexType::Tag)];
+        idx.unindex_document(db_name, col_name, before, &idx_defs).await;
+    }
+    if let (Some(cache), Some(id)) = (doc_cache, before.get("_id")) {
+        cache.del_doc(db_name, col_name, &json_to_string(id)).await;
+    }
+}
+
+/// Inserta o reemplaza por `_id` (upsert). Devuelve (insertados, modificados, documentos escritos).
+async fn upsert_by_id(
+    coll: &mongodb::Collection<Document>,
+    db_name: &str,
+    col_name: &str,
+    docs: &[&Value],
+) -> Result<(u64, u64, Vec<Value>), String> {
+    let mut inserted = 0u64;
+    let mut modified = 0u64;
+    let mut written = Vec::with_capacity(docs.len());
+    let mut pending_inserts: Vec<Document> = Vec::new();
+    for raw in docs {
+        let doc = value_to_document(raw)?;
+        match raw.get("_id") {
+            Some(id) => {
+                let r = coll
+                    .replace_one(doc! { "_id": value_to_bson(id)? }, doc)
+                    .upsert(true)
+                    .await
+                    .map_err(|e| format!("MongoDB upsert failed on '{db_name}.{col_name}': {e}"))?;
+                if r.matched_count > 0 {
+                    modified += 1;
+                } else {
+                    inserted += 1;
+                }
+                written.push((*raw).clone());
+            }
+            None => pending_inserts.push(doc),
+        }
+    }
+    if !pending_inserts.is_empty() {
+        let originals: Vec<&Value> = docs.iter().copied().filter(|d| d.get("_id").is_none()).collect();
+        let r = coll
+            .insert_many(pending_inserts)
+            .await
+            .map_err(|e| format!("MongoDB insertMany failed on '{db_name}.{col_name}': {e}"))?;
+        inserted += r.inserted_ids.len() as u64;
+        for (i, raw) in originals.into_iter().enumerate() {
+            let mut d = raw.clone();
+            if let (Some(obj), Some(id)) = (d.as_object_mut(), r.inserted_ids.get(&i)) {
+                obj.insert("_id".into(), bson_to_value(id));
+            }
+            written.push(d);
+        }
+    }
+    Ok((inserted, modified, written))
+}
+
+async fn upsert_documents_by_id(
+    coll: &mongodb::Collection<Document>,
+    db_name: &str,
+    col_name: &str,
+    docs: &[&Value],
+    index_mgr: &Option<RedisIndexManager>,
+    doc_cache: &Option<RedisDocumentCache>,
+) -> Result<(u64, u64), String> {
+    let (inserted, modified, written) = upsert_by_id(coll, db_name, col_name, docs).await?;
+    for after in &written {
+        write_through_set(index_mgr, doc_cache, db_name, col_name, None, after).await;
+    }
+    Ok((inserted, modified))
+}
+
+/// Importa documentos a una colección. Modos: `replace` (vacía la colección conservando sus
+/// índices), `append` (inserta todo) y `merge` (upsert por `_id`). Devuelve (insertados, modificados).
+async fn import_into_collection(
+    coll: &mongodb::Collection<Document>,
+    db_name: &str,
+    col_name: &str,
+    mode: &str,
+    docs: &[&Value],
+) -> Result<(u64, u64), String> {
+    match mode {
+        "replace" | "append" => {
+            if mode == "replace" {
+                coll.delete_many(doc! {})
+                    .await
+                    .map_err(|e| format!("MongoDB could not clear '{db_name}.{col_name}': {e}"))?;
+            }
+            let mut inserted = 0u64;
+            for chunk in docs.chunks(1000) {
+                let batch = chunk.iter().map(|d| value_to_document(d)).collect::<Result<Vec<_>, _>>()?;
+                let r = coll
+                    .insert_many(batch)
+                    .await
+                    .map_err(|e| format!("MongoDB insertMany failed on '{db_name}.{col_name}': {e}"))?;
+                inserted += r.inserted_ids.len() as u64;
+            }
+            if docs.is_empty() && mode == "replace" {
+                // Asegura que la colección exista aunque quede vacía.
+                let _ = coll.client().database(db_name).create_collection(col_name).await;
+            }
+            Ok((inserted, 0))
+        }
+        _ => {
+            let (i, m, _) = upsert_by_id(coll, db_name, col_name, docs).await?;
+            Ok((i, m))
+        }
+    }
+}
+
+/// Índices de una colección; una colección que aún no existe no tiene índices.
+async fn list_index_models(
+    mongo: &MongoConnectionInfo,
+    db_name: &str,
+    col_name: &str,
+) -> Result<Vec<IndexModel>, String> {
+    let mut cursor = match mongo
+        .client
+        .database(db_name)
+        .collection::<Document>(col_name)
+        .list_indexes()
+        .await
+    {
+        Ok(c) => c,
+        Err(e) if e.to_string().contains("NamespaceNotFound") || e.to_string().contains("ns does not exist") => {
+            return Ok(Vec::new());
+        }
+        Err(e) => return Err(format!("MongoDB listIndexes failed on '{db_name}.{col_name}': {e}")),
+    };
+    let mut out = Vec::new();
+    while let Some(model) = cursor.next().await {
+        out.push(model.map_err(|e| format!("MongoDB listIndexes cursor error: {e}"))?);
+    }
+    Ok(out)
+}
+
+/// Claves de un índice como lista ordenada `[{field, type}]` (un objeto JSON perdería el orden).
+fn index_keys_to_json(keys: &Document) -> Value {
+    Value::Array(
+        keys.iter()
+            .map(|(field, kind)| {
+                let kind = match kind {
+                    Bson::Int32(n) => json!(n),
+                    Bson::Int64(n) => json!(n),
+                    Bson::Double(n) => json!(n),
+                    Bson::String(s) => json!(s),
+                    other => json!(other.to_string()),
+                };
+                json!({ "field": field, "type": kind })
+            })
+            .collect(),
+    )
+}
+
+/// Valida las claves de `createIndex`: lista ordenada `[{field, type}]`, donde `type` es
+/// 1, -1, "text", "hashed", "2dsphere" o "2d". Se acepta un objeto si tiene una sola clave.
+fn parse_index_keys(raw: &Value) -> Result<Vec<(String, Bson)>, String> {
+    let pairs: Vec<(String, Value)> = match raw {
+        Value::Array(items) => items
+            .iter()
+            .map(|it| {
+                let field = it.get("field").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+                let kind = it.get("type").cloned().unwrap_or(json!(1));
+                (field, kind)
+            })
+            .collect(),
+        Value::Object(map) if map.len() == 1 => map.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+        Value::Object(_) => {
+            return Err("keys with several fields must be an ordered array: [{\"field\":\"a\",\"type\":1}, ...]".into())
+        }
+        _ => return Err("keys must be an array of {field, type}".into()),
+    };
+    if pairs.is_empty() {
+        return Err("keys must contain at least one field".into());
+    }
+    let mut seen = HashSet::new();
+    let mut out = Vec::with_capacity(pairs.len());
+    for (field, kind) in pairs {
+        if field.is_empty() || field.starts_with('$') || field.contains(".$") {
+            return Err(format!("Invalid index field '{field}'"));
+        }
+        if !seen.insert(field.clone()) {
+            return Err(format!("Field '{field}' is repeated in the index"));
+        }
+        let bson = match &kind {
+            Value::Number(n) if n.as_i64() == Some(1) => Bson::Int32(1),
+            Value::Number(n) if n.as_i64() == Some(-1) => Bson::Int32(-1),
+            Value::String(s) if matches!(s.as_str(), "text" | "hashed" | "2dsphere" | "2d") => Bson::String(s.clone()),
+            Value::String(s) if s == "1" => Bson::Int32(1),
+            Value::String(s) if s == "-1" => Bson::Int32(-1),
+            other => {
+                return Err(format!(
+                    "Invalid index type {other} for '{field}' (1, -1, \"text\", \"hashed\", \"2dsphere\", \"2d\")"
+                ))
+            }
+        };
+        out.push((field, bson));
+    }
+    Ok(out)
+}
+
+/// Ejecuta la consulta en MongoDB con filtro, orden, skip y límite del lado del servidor.
+async fn find_docs_mongo(
+    mongo: &MongoConnectionInfo,
+    db_name: &str,
+    col_name: &str,
+    filter: &Value,
+    sort: Option<&Value>,
+    limit: Option<usize>,
+    skip: usize,
+) -> Result<Vec<Value>, String> {
+    if limit == Some(0) {
+        return Ok(Vec::new());
+    }
+    if !database_exists(mongo, db_name).await? {
+        return Err(format!("Database '{}' not found", db_name));
+    }
+    let translated = translate_filter(filter);
+    let bson_filter = value_to_document(&translated)?;
+    let collection = mongo.client.database(db_name).collection::<Document>(col_name);
+    let mut find = collection.find(bson_filter);
+    if let Some(s) = sort.filter(|s| s.as_object().map(|o| !o.is_empty()).unwrap_or(false)) {
+        find = find.sort(value_to_document(s)?);
+    }
+    if skip > 0 {
+        find = find.skip(skip as u64);
+    }
+    if let Some(lim) = limit {
+        find = find.limit(lim.min(i64::MAX as usize) as i64);
+    }
+    let mut cursor = find
+        .await
+        .map_err(|e| format!("MongoDB find failed on '{db_name}.{col_name}': {e}"))?;
+    let mut out = Vec::new();
+    while let Some(res) = cursor.next().await {
+        let doc = res.map_err(|e| format!("MongoDB cursor error on '{db_name}.{col_name}': {e}"))?;
+        out.push(document_to_value(doc)?);
+    }
+    log_line(
+        LogLevel::Debug,
+        "mongo_find",
+        Some(json!({
+            "database_name": db_name,
+            "collection": col_name,
+            "filter": preview_json(&translated, 500),
+            "returned": out.len()
+        })),
+    );
+    Ok(out)
+}
+
+/// Resuelve `find`/`findOne`. Las búsquedas por `_id` exacto se sirven desde la
+/// caché de documentos de Redis cuando el documento está ahí; todo lo demás (y
+/// cualquier fallo de caché) se resuelve en MongoDB con sus índices.
+#[allow(clippy::too_many_arguments)]
 async fn resolve_docs_redis_first(
     mongo: &MongoConnectionInfo,
     doc_cache: &Option<RedisDocumentCache>,
-    index_mgr: &Option<RedisIndexManager>,
+    _index_mgr: &Option<RedisIndexManager>,
     auto_index: &Option<AutoIndexManager>,
     db_name: &str,
     col_name: &str,
@@ -3397,208 +3936,59 @@ async fn resolve_docs_redis_first(
     limit: Option<usize>,
     skip: usize,
 ) -> Result<Vec<Value>, String> {
-    let plan = QueryPlanAnalyzer::analyze(filter);
-
     if let Some(ai) = auto_index {
-        let fields = QueryPlanAnalyzer::extract_indexable_fields(filter);
-        for field in fields {
+        for field in QueryPlanAnalyzer::extract_indexable_fields(filter) {
             ai.record_query_field(db_name, col_name, &field).await;
         }
     }
 
-    // Optimizacion: si el plan determino explicitamente fallback a Mongo
-    // y no tenemos cache/indices, saltarse directamente a MongoDB.
-    if plan.fallback_to_mongo && !plan.can_use_redis {
-        log_line(
-            LogLevel::Debug,
-            "query_plan_fallback_mongo",
-            Some(json!({
-                "database_name": db_name,
-                "collection": col_name,
-                "strategy": format!("{:?}", plan.index_strategy)
-            })),
-        );
-    }
+    let finish = |docs: Vec<Value>| -> Vec<Value> {
+        match projection {
+            Some(p) => docs.into_iter().map(|d| apply_projection(&d, p)).collect(),
+            None => docs,
+        }
+    };
 
-    if plan.can_use_redis {
-        if let (Some(cache), Some(idx_mgr)) = (doc_cache, index_mgr) {
-            let doc_ids = match &plan.index_strategy {
-                IndexStrategy::PrimaryKeyLookup { id } => vec![id.clone()],
-                IndexStrategy::NumericRange { field, min, max } => {
-                    idx_mgr.query_numeric_range(db_name, col_name, field, *min, *max).await
-                }
-                IndexStrategy::TagExact { field, value } => {
-                    idx_mgr.query_tag(db_name, col_name, field, value).await
-                }
-                IndexStrategy::StringExact { field, value } => {
-                    idx_mgr.query_string(db_name, col_name, field, value)
-                        .await
-                        .map(|id| vec![id])
-                        .unwrap_or_default()
-                }
-                IndexStrategy::TagsAnd { field, values } => {
-                    idx_mgr.query_tags_and(db_name, col_name, field, values).await
-                }
-                IndexStrategy::Composite(strategies) => {
-                    let mut all_ids: Vec<Vec<String>> = Vec::new();
-                    for s in strategies {
-                        let ids = match s {
-                            IndexStrategy::NumericRange { field, min, max } => {
-                                idx_mgr.query_numeric_range(db_name, col_name, field, *min, *max).await
-                            }
-                            IndexStrategy::TagExact { field, value } => {
-                                idx_mgr.query_tag(db_name, col_name, field, value).await
-                            }
-                            IndexStrategy::StringExact { field, value } => {
-                                idx_mgr.query_string(db_name, col_name, field, value)
-                                    .await
-                                    .map(|id| vec![id])
-                                    .unwrap_or_default()
-                            }
-                            _ => vec![],
-                        };
-                        if !ids.is_empty() {
-                            all_ids.push(ids);
-                        }
-                    }
-                    if all_ids.is_empty() {
-                        vec![]
-                    } else {
-                        let mut result = all_ids[0].clone();
-                        for ids in &all_ids[1..] {
-                            let set: HashSet<String> = ids.iter().cloned().collect();
-                            result.retain(|id| set.contains(id));
-                        }
-                        result
+    // Búsqueda por _id exacto: caché de documentos (Redis).
+    if let (Some(cache), Some(id_val)) = (doc_cache, filter.get("_id")) {
+        if skip == 0 && (!is_operator_object(id_val) || is_extended_json_value(id_val)) {
+            let mut keys = vec![json_to_string(id_val)];
+            if let Some(variants) = object_id_variants(id_val) {
+                for v in variants {
+                    let k = json_to_string(&v);
+                    if !keys.contains(&k) {
+                        keys.push(k);
                     }
                 }
-                IndexStrategy::None => vec![],
-            };
-
-            if !doc_ids.is_empty() {
-                let docs = cache.mget_docs(db_name, col_name, &doc_ids).await;
-                let mut matched: Vec<Value> = docs.into_iter().flatten().collect();
-                matched.retain(|d| match_filter(d, filter));
-
-                if let Some(s) = sort {
-                    sort_docs(&mut matched, s);
-                }
-                let mut result: Vec<Value> = if let Some(lim) = limit {
-                    matched.into_iter().skip(skip).take(lim).collect()
-                } else {
-                    matched.into_iter().skip(skip).collect()
-                };
-                if let Some(p) = projection {
-                    result = result.into_iter().map(|d| apply_projection(&d, p)).collect();
-                }
-
-                log_line(
-                    LogLevel::Info,
-                    "redis_index_query_hit",
-                    Some(json!({
-                        "database_name": db_name,
-                        "collection": col_name,
-                        "strategy": format!("{:?}", plan.index_strategy),
-                        "matched_docs": result.len(),
-                        "fallback_to_mongo": plan.fallback_to_mongo
-                    })),
-                );
-                return Ok(result);
-            } else {
-                // Fallback cruzado: si la estrategia principal no devolvio IDs,
-                // intentar la estrategia alternativa para el mismo tipo de consulta
-                // (StringExact ↔ TagExact) por incoherencias entre tipo de indice y planificador.
-                let fallback_ids = match &plan.index_strategy {
-                    IndexStrategy::StringExact { field, value } => {
-                        Some(idx_mgr.query_tag(db_name, col_name, field, value).await)
+            }
+            for key in keys {
+                if let Some(Some(doc)) = cache.mget_docs(db_name, col_name, &[key]).await.into_iter().next() {
+                    let mut matched: Vec<Value> = if match_filter(&doc, filter) { vec![doc] } else { vec![] };
+                    if limit == Some(0) {
+                        matched.clear();
                     }
-                    IndexStrategy::TagExact { field, value } => {
-                        idx_mgr.query_string(db_name, col_name, field, value)
-                            .await
-                            .map(|id| vec![id])
-                    }
-                    _ => None,
-                };
-
-                if let Some(fallback_ids) = fallback_ids {
-                    if !fallback_ids.is_empty() {
-                        log_line(
-                            LogLevel::Debug,
-                            "redis_index_cross_fallback_hit",
-                            Some(json!({
-                                "database_name": db_name,
-                                "collection": col_name,
-                                "strategy": format!("{:?}", plan.index_strategy)
-                            })),
-                        );
-                        let docs = cache.mget_docs(db_name, col_name, &fallback_ids).await;
-                        let mut matched: Vec<Value> = docs.into_iter().flatten().collect();
-                        matched.retain(|d| match_filter(d, filter));
-
-                        if let Some(s) = sort {
-                            sort_docs(&mut matched, s);
-                        }
-                        let mut result: Vec<Value> = if let Some(lim) = limit {
-                            matched.into_iter().skip(skip).take(lim).collect()
-                        } else {
-                            matched.into_iter().skip(skip).collect()
-                        };
-                        if let Some(p) = projection {
-                            result = result.into_iter().map(|d| apply_projection(&d, p)).collect();
-                        }
-                        return Ok(result);
-                    }
-                }
-
-                if !plan.fallback_to_mongo {
                     log_line(
                         LogLevel::Debug,
-                        "redis_index_query_miss_empty_ids",
-                        Some(json!({
-                            "database_name": db_name,
-                            "collection": col_name,
-                            "strategy": format!("{:?}", plan.index_strategy)
-                        })),
+                        "redis_doc_cache_hit",
+                        Some(json!({ "database_name": db_name, "collection": col_name })),
                     );
+                    return Ok(finish(matched));
                 }
             }
         }
     }
 
-    let db = load_database(mongo, db_name).await?;
-    let docs = db
-        .collections
-        .get(col_name)
-        .map(|v| v.as_slice())
-        .unwrap_or(&[]);
-    let mut matched: Vec<Value> = docs
-        .iter()
-        .filter(|d| match_filter(d, filter))
-        .cloned()
-        .collect();
-
-    if let Some(s) = sort {
-        sort_docs(&mut matched, &s);
-    }
-    let mut result: Vec<Value> = if let Some(lim) = limit {
-        matched.into_iter().skip(skip).take(lim).collect()
-    } else {
-        matched.into_iter().skip(skip).collect()
-    };
-    if let Some(p) = projection {
-        result = result.into_iter().map(|d| apply_projection(&d, p)).collect();
-    }
+    let result = find_docs_mongo(mongo, db_name, col_name, filter, sort, limit, skip).await?;
 
     if let Some(cache) = doc_cache {
         for doc in &result {
             if let Some(id) = doc.get("_id") {
-                let id_str = json_to_string(id);
-                cache.set_doc(db_name, col_name, &id_str, doc).await;
+                cache.set_doc(db_name, col_name, &json_to_string(id), doc).await;
             }
         }
     }
 
-    Ok(result)
+    Ok(finish(result))
 }
 
 async fn handle_collection_action(
@@ -3682,31 +4072,26 @@ async fn handle_collection_action(
         }
 
         "insertOne" => {
-            let mut db = load_database(mongo, db_name).await?;
+            require_database(mongo, db_name).await?;
             let doc = payload
                 .get("document")
                 .cloned()
                 .ok_or("document is required")?;
-            let id = doc.get("_id").cloned().unwrap_or(Value::Null);
-            let after = doc.clone();
-            let docs = db
-                .collections
-                .entry(col_name.to_string())
-                .or_insert_with(Vec::new);
-            docs.push(doc.clone());
-
-            save_database(mongo, db_name, &db).await?;
-
-            if let Some(idx) = index_mgr {
-                let idx_defs = vec![(String::from("_id"), IndexType::Tag)];
-                idx.index_document(db_name, col_name, &after, &idx_defs).await;
+            if !doc.is_object() {
+                return Err("document must be a JSON object".into());
             }
-            if let Some(cache) = doc_cache {
-                if let Some(id_val) = after.get("_id") {
-                    cache.set_doc(db_name, col_name, &json_to_string(id_val), &after).await;
-                }
+            let coll = write_collection(mongo, db_name, col_name);
+            let res = coll
+                .insert_one(value_to_document(&doc)?)
+                .await
+                .map_err(|e| format!("MongoDB insertOne failed on '{db_name}.{col_name}': {e}"))?;
+            let id = bson_to_value(&res.inserted_id);
+            let mut after = doc.clone();
+            if let Some(obj) = after.as_object_mut() {
+                obj.entry("_id").or_insert_with(|| id.clone());
             }
 
+            write_through_set(index_mgr, doc_cache, db_name, col_name, None, &after).await;
             emitter.emit(
                 "collection",
                 "insertOne",
@@ -3719,258 +4104,107 @@ async fn handle_collection_action(
             Ok(json!({"acknowledged": true, "insertedId": id}))
         }
 
-        "updateOne" => {
-            let mut db = load_database(mongo, db_name).await?;
+        "updateOne" | "replaceOne" => {
+            require_database(mongo, db_name).await?;
             let filter = payload
                 .get("filter")
                 .cloned()
                 .unwrap_or(Value::Object(Map::new()));
-            let update = payload.get("update").cloned().ok_or("update is required")?;
-            let options = payload.get("options").cloned();
-            let upsert = options
-                .as_ref()
+            let body = if func == "updateOne" {
+                payload.get("update").cloned().ok_or("update is required")?
+            } else {
+                payload.get("replacement").cloned().ok_or("replacement is required")?
+            };
+            let upsert = payload
+                .get("options")
                 .and_then(|o| o.get("upsert"))
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
-
-            let docs = db
-                .collections
-                .entry(col_name.to_string())
-                .or_insert_with(Vec::new);
-            let mut matched = 0;
-            let mut modified_count = 0;
-            let mut upserted = 0;
-            let mut upserted_id = Value::Null;
-            let mut ev_before = Value::Null;
-            let mut ev_after = Value::Null;
-            let mut had_change = false;
-
-            if let Some(idx) = docs.iter().position(|d| match_filter(d, &filter)) {
-                matched = 1;
-                ev_before = docs[idx].clone();
-                let original_id = docs[idx].get("_id").cloned();
-
-                if let Some(idx_mgr) = index_mgr {
-                    let idx_defs = vec![(String::from("_id"), IndexType::Tag)];
-                    idx_mgr.unindex_document(db_name, col_name, &ev_before, &idx_defs).await;
-                }
-
-                if is_operator_object(&update) {
-                    if apply_update_operators(&mut docs[idx], &update) {
-                        modified_count = 1;
-                    }
-                } else {
-                    let mut replacement = update.clone();
-                    if let Some(id) = original_id {
-                        if let Some(obj) = replacement.as_object_mut() {
-                            obj.insert("_id".into(), id);
-                        }
-                    }
-                    docs[idx] = replacement;
-                    modified_count = 1;
-                }
-                ev_after = docs[idx].clone();
-                had_change = true;
-
-                if let Some(idx_mgr) = index_mgr {
-                    let idx_defs = vec![(String::from("_id"), IndexType::Tag)];
-                    idx_mgr.index_document(db_name, col_name, &ev_after, &idx_defs).await;
-                }
-                if let Some(cache) = doc_cache {
-                    if let Some(id_val) = ev_after.get("_id") {
-                        cache.set_doc(db_name, col_name, &json_to_string(id_val), &ev_after).await;
-                    }
-                }
-            } else if upsert {
-                let mut new_doc = if let Some(f) = filter.as_object() {
-                    let mut base = Map::new();
-                    for (k, v) in f {
-                        if !k.starts_with('$') && !is_operator_object(v) {
-                            base.insert(k.clone(), v.clone());
-                        }
-                    }
-                    Value::Object(base)
-                } else {
-                    Value::Object(Map::new())
-                };
-                if is_operator_object(&update) {
-                    if let Some(set_on_insert) =
-                        update.get("$setOnInsert").and_then(|v| v.as_object())
-                    {
-                        if let Some(nd) = new_doc.as_object_mut() {
-                            for (k, v) in set_on_insert {
-                                nd.entry(k.clone()).or_insert_with(|| v.clone());
-                            }
-                        }
-                    }
-                    apply_update_operators(&mut new_doc, &update);
-                } else if let Some(u) = update.as_object() {
-                    if let Some(nd) = new_doc.as_object_mut() {
-                        for (k, v) in u {
-                            nd.insert(k.clone(), v.clone());
-                        }
-                    }
-                }
-                upserted_id = new_doc.get("_id").cloned().unwrap_or(Value::Null);
-                ev_after = new_doc.clone();
-                docs.push(new_doc.clone());
-                upserted = 1;
-                had_change = true;
-
-                if let Some(idx_mgr) = index_mgr {
-                    let idx_defs = vec![(String::from("_id"), IndexType::Tag)];
-                    idx_mgr.index_document(db_name, col_name, &ev_after, &idx_defs).await;
-                }
-                if let Some(cache) = doc_cache {
-                    if let Some(id_val) = ev_after.get("_id") {
-                        cache.set_doc(db_name, col_name, &json_to_string(id_val), &ev_after).await;
-                    }
-                }
+            let use_operators = func == "updateOne" && is_operator_object(&body);
+            if !use_operators && body.as_object().map(|o| o.keys().any(|k| k.starts_with('$'))).unwrap_or(true) {
+                return Err("replacement document must be an object without update operators".into());
+            }
+            let mut body_doc = value_to_document(&body)?;
+            if !use_operators {
+                // El _id del documento original se conserva siempre.
+                body_doc.remove("_id");
             }
 
-            if had_change {
-                save_database(mongo, db_name, &db).await?;
-            }
+            let coll = write_collection(mongo, db_name, col_name);
+            let before = find_one_raw(&coll, bson_filter(&filter)?).await?;
 
-            if had_change {
-                emitter.emit(
-                    "collection",
-                    "updateOne",
-                    json!({
-                        "database_name": db_name, "collectionName": col_name,
-                        "before": ev_before, "after": ev_after,
-                        "summary": {
-                            "matchedCount": matched, "modifiedCount": modified_count,
-                            "upsertedCount": upserted, "upsertedId": upserted_id.clone()
-                        }
-                    }),
-                );
-            }
+            let (target, upsert_now) = match before.as_ref() {
+                Some(b) => (id_filter_of(b)?, false),
+                None if upsert => (bson_filter(&filter)?, true),
+                None => {
+                    return Ok(json!({
+                        "acknowledged": true, "matchedCount": 0, "modifiedCount": 0,
+                        "upsertedCount": 0, "upsertedId": Value::Null
+                    }));
+                }
+            };
+            let (modified, upserted_bson) = if use_operators {
+                let r = coll
+                    .update_one(target.clone(), body_doc)
+                    .upsert(upsert_now)
+                    .await
+                    .map_err(|e| format!("MongoDB {func} failed on '{db_name}.{col_name}': {e}"))?;
+                (r.modified_count, r.upserted_id)
+            } else {
+                if upsert_now {
+                    // Mismo comportamiento que antes: en upsert por reemplazo, el _id viene del reemplazo.
+                    if let Some(id) = body.get("_id") {
+                        body_doc.insert("_id", value_to_bson(id)?);
+                    }
+                }
+                let r = coll
+                    .replace_one(target.clone(), body_doc)
+                    .upsert(upsert_now)
+                    .await
+                    .map_err(|e| format!("MongoDB {func} failed on '{db_name}.{col_name}': {e}"))?;
+                (r.modified_count, r.upserted_id)
+            };
+
+            let upserted_id = upserted_bson.as_ref().map(bson_to_value).unwrap_or(Value::Null);
+            let after_filter = match (&before, &upserted_bson) {
+                (Some(b), _) => id_filter_of(b)?,
+                (None, Some(id)) => doc! { "_id": id.clone() },
+                (None, None) => target,
+            };
+            let after = find_one_raw(&coll, after_filter).await?.unwrap_or(Value::Null);
+            let matched = u64::from(before.is_some());
+            let upserted = u64::from(upserted_bson.is_some());
+            // Un reemplazo cuenta como modificado aunque el contenido sea igual (compatibilidad).
+            let modified = if before.is_some() && !use_operators { 1 } else { modified };
+
+            write_through_set(index_mgr, doc_cache, db_name, col_name, before.as_ref(), &after).await;
+            emitter.emit(
+                "collection",
+                func,
+                json!({
+                    "database_name": db_name, "collectionName": col_name,
+                    "before": before.clone().unwrap_or(Value::Null), "after": after,
+                    "summary": {
+                        "matchedCount": matched, "modifiedCount": modified,
+                        "upsertedCount": upserted, "upsertedId": upserted_id.clone()
+                    }
+                }),
+            );
             Ok(json!({
                 "acknowledged": true,
                 "matchedCount": matched,
-                "modifiedCount": modified_count,
-                "upsertedCount": upserted,
-                "upsertedId": upserted_id
-            }))
-        }
-
-        "replaceOne" => {
-            let mut db = load_database(mongo, db_name).await?;
-            let filter = payload
-                .get("filter")
-                .cloned()
-                .unwrap_or(Value::Object(Map::new()));
-            let replacement = payload
-                .get("replacement")
-                .cloned()
-                .ok_or("replacement is required")?;
-            let options = payload.get("options").cloned();
-            let upsert = options
-                .as_ref()
-                .and_then(|o| o.get("upsert"))
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
-
-            let docs = db
-                .collections
-                .entry(col_name.to_string())
-                .or_insert_with(Vec::new);
-            let mut matched = 0;
-            let mut modified_count = 0;
-            let mut upserted = 0;
-            let mut upserted_id = Value::Null;
-            let mut ev_before = Value::Null;
-            let mut ev_after = Value::Null;
-            let mut had_change = false;
-
-            if let Some(idx) = docs.iter().position(|d| match_filter(d, &filter)) {
-                matched = 1;
-                ev_before = docs[idx].clone();
-
-                if let Some(idx_mgr) = index_mgr {
-                    let idx_defs = vec![(String::from("_id"), IndexType::Tag)];
-                    idx_mgr.unindex_document(db_name, col_name, &ev_before, &idx_defs).await;
-                }
-
-                let original_id = docs[idx].get("_id").cloned();
-                let mut new_doc = replacement.clone();
-                if let Some(id) = original_id {
-                    if let Some(obj) = new_doc.as_object_mut() {
-                        obj.insert("_id".into(), id);
-                    }
-                }
-                docs[idx] = new_doc.clone();
-                ev_after = docs[idx].clone();
-                modified_count = 1;
-                had_change = true;
-
-                if let Some(idx_mgr) = index_mgr {
-                    let idx_defs = vec![(String::from("_id"), IndexType::Tag)];
-                    idx_mgr.index_document(db_name, col_name, &ev_after, &idx_defs).await;
-                }
-                if let Some(cache) = doc_cache {
-                    if let Some(id_val) = ev_after.get("_id") {
-                        cache.set_doc(db_name, col_name, &json_to_string(id_val), &ev_after).await;
-                    }
-                }
-            } else if upsert {
-                let new_doc = replacement.clone();
-                upserted_id = new_doc.get("_id").cloned().unwrap_or(Value::Null);
-                ev_after = new_doc.clone();
-                docs.push(new_doc.clone());
-                upserted = 1;
-                had_change = true;
-
-                if let Some(idx_mgr) = index_mgr {
-                    let idx_defs = vec![(String::from("_id"), IndexType::Tag)];
-                    idx_mgr.index_document(db_name, col_name, &ev_after, &idx_defs).await;
-                }
-                if let Some(cache) = doc_cache {
-                    if let Some(id_val) = ev_after.get("_id") {
-                        cache.set_doc(db_name, col_name, &json_to_string(id_val), &ev_after).await;
-                    }
-                }
-            }
-
-            if had_change {
-                save_database(mongo, db_name, &db).await?;
-            }
-
-            if had_change {
-                emitter.emit(
-                    "collection",
-                    "replaceOne",
-                    json!({
-                        "database_name": db_name, "collectionName": col_name,
-                        "before": ev_before, "after": ev_after,
-                        "summary": {
-                            "matchedCount": matched, "modifiedCount": modified_count,
-                            "upsertedCount": upserted, "upsertedId": upserted_id.clone()
-                        }
-                    }),
-                );
-            }
-            Ok(json!({
-                "acknowledged": true,
-                "matchedCount": matched,
-                "modifiedCount": modified_count,
+                "modifiedCount": modified,
                 "upsertedCount": upserted,
                 "upsertedId": upserted_id
             }))
         }
 
         "deleteOne" => {
-            let mut db = load_database(mongo, db_name).await?;
+            require_database(mongo, db_name).await?;
             let filter = payload
                 .get("filter")
                 .cloned()
                 .unwrap_or(Value::Object(Map::new()));
-            let docs = db
-                .collections
-                .entry(col_name.to_string())
-                .or_insert_with(Vec::new);
-
             log_line(
                 LogLevel::Info,
                 "delete_one_filter_received",
@@ -3980,85 +4214,54 @@ async fn handle_collection_action(
                     "filter_preview": preview_json(&filter, 600)
                 })),
             );
-
-            if let Some(idx) = docs.iter().position(|d| match_filter(d, &filter)) {
-                let before = docs[idx].clone();
-
-                if let Some(idx_mgr) = index_mgr {
-                    let idx_defs = vec![(String::from("_id"), IndexType::Tag)];
-                    idx_mgr.unindex_document(db_name, col_name, &before, &idx_defs).await;
-                }
-                if let Some(cache) = doc_cache {
-                    if let Some(id_val) = before.get("_id") {
-                        cache.del_doc(db_name, col_name, &json_to_string(id_val)).await;
-                    }
-                }
-
-                log_line(
-                    LogLevel::Info,
-                    "delete_one_document_matched",
-                    Some(json!({
-                        "database_name": db_name,
-                        "collectionName": col_name,
-                        "matched_id": preview_json(&before.get("_id").cloned().unwrap_or(Value::Null), 300)
-                    })),
-                );
-                docs.remove(idx);
-                save_database(mongo, db_name, &db).await?;
-
-                emitter.emit(
-                    "collection",
-                    "deleteOne",
-                    json!({
-                        "database_name": db_name, "collectionName": col_name,
-                        "before": before, "after": Value::Null,
-                        "summary": {"deletedCount": 1}
-                    }),
-                );
-                Ok(json!({"acknowledged": true, "deletedCount": 1}))
-            } else {
-                Ok(json!({"acknowledged": true, "deletedCount": 0}))
-            }
+            let coll = write_collection(mongo, db_name, col_name);
+            let removed = coll
+                .find_one_and_delete(bson_filter(&filter)?)
+                .await
+                .map_err(|e| format!("MongoDB deleteOne failed on '{db_name}.{col_name}': {e}"))?;
+            let Some(removed) = removed else {
+                return Ok(json!({"acknowledged": true, "deletedCount": 0}));
+            };
+            let before = document_to_value(removed)?;
+            write_through_delete(index_mgr, doc_cache, db_name, col_name, &before).await;
+            emitter.emit(
+                "collection",
+                "deleteOne",
+                json!({
+                    "database_name": db_name, "collectionName": col_name,
+                    "before": before, "after": Value::Null,
+                    "summary": {"deletedCount": 1}
+                }),
+            );
+            Ok(json!({"acknowledged": true, "deletedCount": 1}))
         }
 
         "deleteMany" => {
-            let mut db = load_database(mongo, db_name).await?;
+            require_database(mongo, db_name).await?;
             let filter = payload
                 .get("filter")
                 .cloned()
                 .unwrap_or(Value::Object(Map::new()));
-            let docs = db
-                .collections
-                .entry(col_name.to_string())
-                .or_insert_with(Vec::new);
-            let removed: Vec<Value> = docs
-                .iter()
-                .filter(|d| match_filter(d, &filter))
-                .cloned()
-                .collect();
-
-            if let Some(idx_mgr) = index_mgr {
-                let idx_defs = vec![(String::from("_id"), IndexType::Tag)];
-                for doc in &removed {
-                    idx_mgr.unindex_document(db_name, col_name, doc, &idx_defs).await;
-                }
+            let coll = write_collection(mongo, db_name, col_name);
+            // Se leen los documentos que coinciden para el evento y la caché; luego se borran por _id
+            // para que el evento refleje exactamente lo eliminado.
+            let removed = find_many_raw(&coll, bson_filter(&filter)?).await?;
+            let mut deleted = 0u64;
+            for chunk in removed.chunks(1000) {
+                let ids = chunk
+                    .iter()
+                    .filter_map(|d| d.get("_id"))
+                    .map(value_to_bson)
+                    .collect::<Result<Vec<_>, _>>()?;
+                let r = coll
+                    .delete_many(doc! { "_id": { "$in": ids } })
+                    .await
+                    .map_err(|e| format!("MongoDB deleteMany failed on '{db_name}.{col_name}': {e}"))?;
+                deleted += r.deleted_count;
             }
-            if let Some(cache) = doc_cache {
-                for doc in &removed {
-                    if let Some(id_val) = doc.get("_id") {
-                        cache.del_doc(db_name, col_name, &json_to_string(id_val)).await;
-                    }
-                }
+            for doc in &removed {
+                write_through_delete(index_mgr, doc_cache, db_name, col_name, doc).await;
             }
-
-            let before = docs.len();
-            docs.retain(|d| !match_filter(d, &filter));
-            let deleted = before - docs.len();
-
-            if deleted > 0 {
-                save_database(mongo, db_name, &db).await?;
-            }
-
             if deleted > 0 {
                 emitter.emit(
                     "collection",
@@ -4074,11 +4277,8 @@ async fn handle_collection_action(
         }
 
         "updateCollection" => {
-            let mut db = load_database(mongo, db_name).await?;
-            let docs = db
-                .collections
-                .entry(col_name.to_string())
-                .or_insert_with(Vec::new);
+            require_database(mongo, db_name).await?;
+            let coll = write_collection(mongo, db_name, col_name);
 
             let result = if let Some(Value::Array(data)) = payload
                 .get("data")
@@ -4086,155 +4286,69 @@ async fn handle_collection_action(
                 .or(payload.get("docs"))
                 .or(payload.get("items"))
             {
-                if data.is_empty() {
-                    Ok(json!({"acknowledged": true, "insertedCount": 0, "modifiedCount": 0}))
-                } else {
-                    let mut inserted = 0;
-                    let mut modified_count = 0;
-                    for raw in data {
-                        if raw.is_object() {
-                            if let Some(id) = raw.get("_id").cloned() {
-                                if let Some(idx) =
-                                    docs.iter().position(|d| value_eq(d.get("_id"), Some(&id)))
-                                {
-                                    if let Some(idx_mgr) = index_mgr {
-                                        let idx_defs = vec![(String::from("_id"), IndexType::Tag)];
-                                        idx_mgr.unindex_document(db_name, col_name, &docs[idx], &idx_defs).await;
-                                    }
-                                    docs[idx] = raw.clone();
-                                    modified_count += 1;
-                                    if let Some(idx_mgr) = index_mgr {
-                                        let idx_defs = vec![(String::from("_id"), IndexType::Tag)];
-                                        idx_mgr.index_document(db_name, col_name, &docs[idx], &idx_defs).await;
-                                    }
-                                    if let Some(cache) = doc_cache {
-                                        if let Some(id_val) = docs[idx].get("_id") {
-                                            cache.set_doc(db_name, col_name, &json_to_string(id_val), &docs[idx]).await;
-                                        }
-                                    }
-                                } else {
-                                    docs.push(raw.clone());
-                                    inserted += 1;
-                                    if let Some(idx_mgr) = index_mgr {
-                                        let idx_defs = vec![(String::from("_id"), IndexType::Tag)];
-                                        idx_mgr.index_document(db_name, col_name, raw, &idx_defs).await;
-                                    }
-                                    if let Some(cache) = doc_cache {
-                                        if let Some(id_val) = raw.get("_id") {
-                                            cache.set_doc(db_name, col_name, &json_to_string(id_val), raw).await;
-                                        }
-                                    }
-                                }
-                            } else {
-                                docs.push(raw.clone());
-                                inserted += 1;
-                                if let Some(idx_mgr) = index_mgr {
-                                    let idx_defs = vec![(String::from("_id"), IndexType::Tag)];
-                                    idx_mgr.index_document(db_name, col_name, raw, &idx_defs).await;
-                                }
-                                if let Some(cache) = doc_cache {
-                                    if let Some(id_val) = raw.get("_id") {
-                                        cache.set_doc(db_name, col_name, &json_to_string(id_val), raw).await;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    Ok(json!({
-                        "acknowledged": true,
-                        "insertedCount": inserted,
-                        "modifiedCount": modified_count
-                    }))
-                }
+                let objects: Vec<&Value> = data.iter().filter(|d| d.is_object()).collect();
+                let (inserted, modified) =
+                    upsert_documents_by_id(&coll, db_name, col_name, &objects, index_mgr, doc_cache).await?;
+                json!({"acknowledged": true, "insertedCount": inserted, "modifiedCount": modified})
             } else {
                 let filter = payload
                     .get("filter")
                     .cloned()
                     .unwrap_or(Value::Object(Map::new()));
                 let update = payload.get("update").cloned().ok_or("update is required")?;
-                let mut matched = 0;
-                let mut modified_count = 0;
-                for doc in docs.iter_mut() {
-                    if match_filter(doc, &filter) {
-                        matched += 1;
-
-                        if let Some(idx_mgr) = index_mgr {
-                            let idx_defs = vec![(String::from("_id"), IndexType::Tag)];
-                            idx_mgr.unindex_document(db_name, col_name, doc, &idx_defs).await;
-                        }
-
-                        if is_operator_object(&update) {
-                            if apply_update_operators(doc, &update) {
-                                modified_count += 1;
-                            }
-                        } else {
-                            let original_id = doc.get("_id").cloned();
-                            *doc = update.clone();
-                            if let Some(id) = original_id {
-                                if let Some(obj) = doc.as_object_mut() {
-                                    obj.insert("_id".into(), id);
-                                }
-                            }
-                            modified_count += 1;
-                        }
-
-                        if let Some(idx_mgr) = index_mgr {
-                            let idx_defs = vec![(String::from("_id"), IndexType::Tag)];
-                            idx_mgr.index_document(db_name, col_name, doc, &idx_defs).await;
-                        }
-                        if let Some(cache) = doc_cache {
-                            if let Some(id_val) = doc.get("_id") {
-                                cache.set_doc(db_name, col_name, &json_to_string(id_val), doc).await;
-                            }
-                        }
+                let ids: Vec<Value> = find_many_raw(&coll, bson_filter(&filter)?)
+                    .await?
+                    .into_iter()
+                    .filter_map(|d| d.get("_id").cloned())
+                    .collect();
+                let matched = ids.len() as u64;
+                let mut modified = 0u64;
+                if is_operator_object(&update) {
+                    let update_doc = value_to_document(&update)?;
+                    for chunk in ids.chunks(1000) {
+                        let bson_ids = chunk.iter().map(value_to_bson).collect::<Result<Vec<_>, _>>()?;
+                        let r = coll
+                            .update_many(doc! { "_id": { "$in": bson_ids } }, update_doc.clone())
+                            .await
+                            .map_err(|e| format!("MongoDB updateMany failed on '{db_name}.{col_name}': {e}"))?;
+                        modified += r.modified_count;
+                    }
+                } else {
+                    let mut replacement = value_to_document(&update)?;
+                    replacement.remove("_id");
+                    for id in &ids {
+                        coll.replace_one(doc! { "_id": value_to_bson(id)? }, replacement.clone())
+                            .await
+                            .map_err(|e| format!("MongoDB replace failed on '{db_name}.{col_name}': {e}"))?;
+                        modified += 1;
                     }
                 }
-                Ok(json!({
-                    "acknowledged": true,
-                    "matchedCount": matched,
-                    "modifiedCount": modified_count
-                }))
+                // Write-Through de los documentos ya confirmados.
+                for chunk in ids.chunks(1000) {
+                    let bson_ids = chunk.iter().map(value_to_bson).collect::<Result<Vec<_>, _>>()?;
+                    for after in find_many_raw(&coll, doc! { "_id": { "$in": bson_ids } }).await? {
+                        write_through_set(index_mgr, doc_cache, db_name, col_name, None, &after).await;
+                    }
+                }
+                json!({"acknowledged": true, "matchedCount": matched, "modifiedCount": modified})
             };
 
-            if let Ok(ref val) = result {
-                let had_change = val
-                    .get("insertedCount")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(0)
-                    > 0
-                    || val
-                        .get("modifiedCount")
-                        .and_then(|v| v.as_u64())
-                        .unwrap_or(0)
-                        > 0
-                    || val
-                        .get("matchedCount")
-                        .and_then(|v| v.as_u64())
-                        .unwrap_or(0)
-                        > 0;
-                if had_change {
-                    save_database(mongo, db_name, &db).await?;
-                }
-            }
-
-            if let Ok(ref val) = result {
-                emitter.emit(
-                    "collection",
-                    "updateCollection",
-                    json!({
-                        "database_name": db_name, "collectionName": col_name,
-                        "before": Value::Null, "after": Value::Null,
-                        "summary": val
-                    }),
-                );
-            }
-            result
+            emitter.emit(
+                "collection",
+                "updateCollection",
+                json!({
+                    "database_name": db_name, "collectionName": col_name,
+                    "before": Value::Null, "after": Value::Null,
+                    "summary": result
+                }),
+            );
+            Ok(result)
         }
 
         "exportCollection" => {
-            let db = load_database(mongo, db_name).await?;
-            let docs = db.collections.get(col_name).cloned().unwrap_or_default();
-            Ok(Value::Array(docs))
+            require_database(mongo, db_name).await?;
+            let coll = mongo.client.database(db_name).collection::<Document>(col_name);
+            Ok(Value::Array(find_many_raw(&coll, doc! {}).await?))
         }
 
         "importCollection" => {
@@ -4245,73 +4359,20 @@ async fn handle_collection_action(
                 .ok_or("data is required (array of documents)")?;
             let arr = data.as_array().ok_or("data must be a JSON array")?;
             let mode = opt_str(payload, "mode").unwrap_or("merge");
-
             for raw in arr {
                 if !raw.is_object() {
                     return Err("All documents must be JSON objects".into());
                 }
             }
+            require_database(mongo, db_name).await?;
+            let coll = write_collection(mongo, db_name, col_name);
+            let docs: Vec<&Value> = arr.iter().collect();
+            let (inserted, updated) =
+                import_into_collection(&coll, db_name, col_name, mode, &docs).await?;
 
-            let mut db = load_database(mongo, db_name).await?;
-            let mut inserted = 0usize;
-            let mut updated = 0usize;
-            {
-                let docs = db
-                    .collections
-                    .entry(col_name.to_string())
-                    .or_insert_with(Vec::new);
-
-                match mode {
-                    "replace" => {
-                        let mut new_docs = Vec::with_capacity(arr.len());
-                        for raw in arr {
-                            new_docs.push(raw.clone());
-                        }
-                        inserted = new_docs.len();
-                        *docs = new_docs;
-                    }
-                    "append" => {
-                        for raw in arr {
-                            docs.push(raw.clone());
-                            inserted += 1;
-                        }
-                    }
-                    _ => {
-                        for raw in arr {
-                            match raw.get("_id").cloned() {
-                                Some(id) => {
-                                    if let Some(idx) =
-                                        docs.iter().position(|x| value_eq(x.get("_id"), Some(&id)))
-                                    {
-                                        docs[idx] = raw.clone();
-                                        updated += 1;
-                                    } else {
-                                        docs.push(raw.clone());
-                                        inserted += 1;
-                                    }
-                                }
-                                None => {
-                                    docs.push(raw.clone());
-                                    inserted += 1;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            save_database(mongo, db_name, &db).await?;
-
-            // Reconstruccion full de indices + cache (drop + reindexa TODOS los campos + popula cache)
-            // para garantizar estado Redis 100% consistente con MongoDB despues del import.
-            let final_docs = db.collections.get(col_name).map(|v| v.as_slice()).unwrap_or(&[]);
-            rebuild_collection_redis_state(
-                db_name,
-                col_name,
-                final_docs,
-                index_mgr,
-                doc_cache,
-            ).await;
+            // La caché de la colección se reinicia y se repuebla con lo importado (Write-Through);
+            // el resto se carga bajo demanda (Cache-Aside).
+            rebuild_collection_redis_state(db_name, col_name, arr, index_mgr, doc_cache).await;
 
             emitter.emit(
                 "collection",
@@ -4328,6 +4389,149 @@ async fn handle_collection_action(
                 "insertedCount": inserted,
                 "modifiedCount": updated
             }))
+        }
+
+        "listIndexes" => {
+            require_database(mongo, db_name).await?;
+            let models = list_index_models(mongo, db_name, col_name).await?;
+            let mut out = Vec::with_capacity(models.len());
+            for model in models {
+                let opts = model.options.clone().unwrap_or_default();
+                let name = opts.name.clone().unwrap_or_default();
+                let keys = index_keys_to_json(&model.keys);
+                let kind = if name == "_id_" {
+                    "system"
+                } else if name.starts_with(AUTOINDEX_NAME_PREFIX) {
+                    "auto"
+                } else {
+                    "manual"
+                };
+                // Campo único del índice: con él se consultan los metadatos del autoindexado.
+                let single_field = (model.keys.len() == 1)
+                    .then(|| model.keys.keys().next().cloned())
+                    .flatten();
+                let auto_info = match (auto_index, &single_field) {
+                    (Some(ai), Some(field)) if kind != "system" => {
+                        Some(ai.describe_field(db_name, col_name, field).await)
+                    }
+                    _ => None,
+                };
+                out.push(json!({
+                    "name": name,
+                    "keys": keys,
+                    "kind": kind,
+                    // Desde el panel ningún índice se borra: los automáticos los retira el autoindexado
+                    // y los manuales y de sistema están protegidos.
+                    "deletable": false,
+                    "unique": opts.unique.unwrap_or(false),
+                    "sparse": opts.sparse.unwrap_or(false),
+                    "expireAfterSeconds": opts.expire_after.map(|d| d.as_secs()),
+                    "partialFilterExpression": opts
+                        .partial_filter_expression
+                        .clone()
+                        .and_then(|d| document_to_value(d).ok()),
+                    "autoIndex": auto_info
+                }));
+            }
+            Ok(json!({
+                "indexes": out,
+                "autoIndexEnabled": auto_index.is_some()
+            }))
+        }
+
+        "createIndex" => {
+            require_database(mongo, db_name).await?;
+            let keys = parse_index_keys(payload.get("keys").ok_or("keys is required")?)?;
+            let options = payload.get("options").cloned().unwrap_or(Value::Object(Map::new()));
+            let options = options.as_object().ok_or("options must be an object")?;
+            let name = options
+                .get("name")
+                .and_then(|v| v.as_str())
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty());
+            if let Some(n) = &name {
+                if n.starts_with(AUTOINDEX_NAME_PREFIX) || n == "_id_" {
+                    return Err(format!(
+                        "Index names starting with '{AUTOINDEX_NAME_PREFIX}' or '_id_' are reserved"
+                    ));
+                }
+            }
+            let mut index_options = IndexOptions::builder().build();
+            index_options.name = name.clone();
+            if options.get("unique").and_then(|v| v.as_bool()).unwrap_or(false) {
+                index_options.unique = Some(true);
+            }
+            if options.get("sparse").and_then(|v| v.as_bool()).unwrap_or(false) {
+                index_options.sparse = Some(true);
+            }
+            if let Some(ttl) = options.get("expireAfterSeconds").filter(|v| !v.is_null()) {
+                let secs = ttl.as_u64().ok_or("expireAfterSeconds must be a non-negative integer")?;
+                if keys.len() != 1 {
+                    return Err("TTL indexes must have exactly one field".into());
+                }
+                index_options.expire_after = Some(Duration::from_secs(secs));
+            }
+            if let Some(pfe) = options.get("partialFilterExpression").filter(|v| !v.is_null()) {
+                if !pfe.is_object() {
+                    return Err("partialFilterExpression must be an object".into());
+                }
+                index_options.partial_filter_expression = Some(value_to_document(pfe)?);
+            }
+
+            let mut key_doc = Document::new();
+            for (field, kind) in &keys {
+                key_doc.insert(field.clone(), kind.clone());
+            }
+
+            // Si ya existe un autoíndice con las mismas claves, el índice manual lo sustituye:
+            // MongoDB no admite dos índices con la misma especificación de claves.
+            let mut replaced_auto: Option<String> = None;
+            for model in list_index_models(mongo, db_name, col_name).await? {
+                let existing = model.options.as_ref().and_then(|o| o.name.clone()).unwrap_or_default();
+                if existing.starts_with(AUTOINDEX_NAME_PREFIX) && model.keys == key_doc {
+                    mongo
+                        .client
+                        .database(db_name)
+                        .collection::<Document>(col_name)
+                        .drop_index(existing.clone())
+                        .await
+                        .map_err(|e| format!("Could not replace auto index '{existing}': {e}"))?;
+                    if let (Some(ai), Some(idx), Some(field)) =
+                        (auto_index, index_mgr, model.keys.keys().next())
+                    {
+                        ai.forget_field(idx, db_name, col_name, field).await;
+                    }
+                    replaced_auto = Some(existing);
+                }
+            }
+
+            let model = IndexModel::builder().keys(key_doc).options(index_options).build();
+            let created = mongo
+                .client
+                .database(db_name)
+                .collection::<Document>(col_name)
+                .create_index(model)
+                .await
+                .map_err(|e| format!("MongoDB createIndex failed on '{db_name}.{col_name}': {e}"))?;
+            let index_name = created.index_name;
+            log_line(
+                LogLevel::Info,
+                "manual_index_created",
+                Some(json!({
+                    "database_name": db_name, "collectionName": col_name,
+                    "index_name": index_name, "replaced_auto_index": replaced_auto
+                })),
+            );
+            emitter.emit(
+                "collection",
+                "createIndex",
+                json!({
+                    "database_name": db_name, "collectionName": col_name,
+                    "before": Value::Null, "after": Value::Null,
+                    "summary": {"name": index_name, "replacedAutoIndex": replaced_auto}
+                }),
+            );
+            Ok(json!({"acknowledged": true, "name": index_name, "replacedAutoIndex": replaced_auto}))
         }
 
         _ => Err(format!("Unknown collection function: {func}")),
@@ -4375,6 +4579,88 @@ fn error_response(message: &str) -> WsResponse {
 // =============================================================================
 // PROCESAMIENTO DE REQUESTS
 // =============================================================================
+
+/// Comprueba el permiso RBAC del request. Las denegaciones quedan en el log (auditoría).
+fn authorize_request(principal: &Principal, req: &WsRequest) -> Result<(), String> {
+    let payload = req.payload.as_ref().unwrap_or(&Value::Null);
+    let db = opt_str(payload, "database_name")
+        .or(req.database_name.as_deref())
+        .unwrap_or("");
+    let col = opt_str(payload, "collectionName").unwrap_or("");
+    let category = req.category.as_deref().unwrap_or("");
+    let function = req.function_name.as_deref().unwrap_or("");
+    let Some(need) = auth::required_permission(&req.msg_type, category, function, db, col) else {
+        return Ok(());
+    };
+    if principal.allows(&need) {
+        return Ok(());
+    }
+    log_line(
+        LogLevel::Warn,
+        "auth_denied",
+        Some(json!({
+            "principal": principal.name, "type": req.msg_type, "category": category,
+            "function": function, "database_name": db, "collectionName": col,
+            "required": need.level.name()
+        })),
+    );
+    let target = match (&need.database, &need.collection) {
+        _ if need.level == auth::Level::Admin => "the server".to_string(),
+        (Some(d), Some(c)) => format!("'{d}.{c}'"),
+        (Some(d), None) => format!("database '{d}'"),
+        _ => "all databases".to_string(),
+    };
+    Err(format!(
+        "Permission denied: '{}' requires role {} on {}",
+        function_or_type(req),
+        need.level.name(),
+        target
+    ))
+}
+
+fn function_or_type(req: &WsRequest) -> &str {
+    req.function_name.as_deref().filter(|f| !f.is_empty()).unwrap_or(&req.msg_type)
+}
+
+/// process_request con autorización previa y filtrado de listados por permisos.
+#[allow(clippy::too_many_arguments)]
+async fn process_authorized(
+    principal: &Principal,
+    req: WsRequest,
+    mongo: &MongoConnectionInfo,
+    bcast: &Broadcaster,
+    request_cache: Option<RequestCache>,
+    doc_cache: Option<RedisDocumentCache>,
+    index_mgr: Option<RedisIndexManager>,
+    auto_index: Option<AutoIndexManager>,
+) -> WsResponse {
+    if let Err(e) = authorize_request(principal, &req) {
+        return error_response(&e);
+    }
+    let is_list = req.msg_type == "list_databases";
+    let mut resp = process_request(req, mongo, bcast, request_cache, doc_cache, index_mgr, auto_index).await;
+    if is_list && resp.success && !principal.is_admin() {
+        if let Ok(Value::Array(dbs)) = serde_json::from_str::<Value>(&resp.response_json) {
+            let visible: Vec<Value> = dbs
+                .into_iter()
+                .filter(|d| d.as_str().map_or(false, |n| principal.can_read_database(n)))
+                .collect();
+            resp.response_json = Value::Array(visible).to_string();
+        }
+    }
+    resp
+}
+
+/// ¿Puede el principal ver este evento de cambio?
+fn event_visible(principal: &Principal, text: &str) -> bool {
+    if principal.is_admin() {
+        return true;
+    }
+    let Ok(ev) = serde_json::from_str::<Value>(text) else { return false };
+    let db = event_field(&ev, &["database_name", "databaseName"]);
+    let col = event_field(&ev, &["collectionName", "collection_name"]);
+    !db.is_empty() && principal.can_read_collection(db, col)
+}
 
 async fn process_request(
     req: WsRequest,
@@ -4521,7 +4807,7 @@ async fn process_request(
             "api_format": "websocket.microservicedb.DatabaseService",
             "categories": ["collection", "database"],
             "functions": {
-                "collection": ["find", "findOne", "insertOne", "updateOne", "replaceOne", "deleteOne", "deleteMany", "updateCollection", "exportCollection", "importCollection"],
+                "collection": ["find", "findOne", "insertOne", "updateOne", "replaceOne", "deleteOne", "deleteMany", "updateCollection", "exportCollection", "importCollection", "listIndexes", "createIndex"],
                 "database": ["createDatabase", "deleteDatabase", "renameDatabase", "createCollection", "deleteCollection", "renameCollection", "exportDatabase", "importDatabase"]
             },
             "events": {
@@ -4642,6 +4928,7 @@ async fn process_request(
 
 async fn handle_socket(
     ws: WebSocket,
+    principal: Arc<Principal>,
     mongo: MongoState,
     bcast: Broadcaster,
     request_cache: Option<RequestCache>,
@@ -4653,6 +4940,7 @@ async fn handle_socket(
         LogLevel::Info,
         "ws_connection_open",
         Some(json!({
+            "principal": principal.name,
             "cache_enabled": request_cache.is_some(),
             "doc_cache_enabled": doc_cache.is_some(),
             "index_enabled": index_mgr.is_some(),
@@ -4688,10 +4976,14 @@ async fn handle_socket(
 
     let mut bcast_rx = bcast.subscribe();
     let bcast_out = out_tx.clone();
+    let bcast_principal = principal.clone();
     let bcast_task = tokio::spawn(async move {
         loop {
             match bcast_rx.recv().await {
                 Ok(text) => {
+                    if !event_visible(&bcast_principal, &text) {
+                        continue;
+                    }
                     log_line(
                         LogLevel::Debug,
                         "ws_broadcast_forward",
@@ -4746,8 +5038,8 @@ async fn handle_socket(
                 }
             };
 
-            let resp = process_request(
-                req, &mongo, &bcast,
+            let resp = process_authorized(
+                &principal, req, &mongo, &bcast,
                 request_cache.clone(),
                 doc_cache.clone(),
                 index_mgr.clone(),
@@ -4864,7 +5156,11 @@ async fn connect_auto_index_manager(config: &AppConfig) -> Option<AutoIndexManag
         Some(json!({
             "threshold": config.autoindex_threshold,
             "window_secs": config.autoindex_window_secs,
-            "drop_idle_secs": config.autoindex_drop_idle_secs
+            "drop_idle_secs": config.autoindex_drop_idle_secs,
+            "review_secs": config.autoindex_review_secs,
+            "min_docs": config.autoindex_min_docs,
+            "sample_size": config.autoindex_sample_size,
+            "max_match_ratio": config.autoindex_max_match_ratio
         })),
     );
 
@@ -4873,6 +5169,10 @@ async fn connect_auto_index_manager(config: &AppConfig) -> Option<AutoIndexManag
         threshold: config.autoindex_threshold,
         window_secs: config.autoindex_window_secs,
         drop_idle_secs: config.autoindex_drop_idle_secs,
+        review_secs: config.autoindex_review_secs,
+        min_docs: config.autoindex_min_docs,
+        sample_size: config.autoindex_sample_size,
+        max_match_ratio: config.autoindex_max_match_ratio,
         prefix: INDEX_STATS_PREFIX.to_string(),
     })
 }
@@ -4883,19 +5183,315 @@ async fn auto_index_agent_loop(
     auto_index: AutoIndexManager,
 ) {
     let mut ticker = interval(Duration::from_secs(60));
+    let mut last_review: u64 = 0;
     loop {
         ticker.tick().await;
+        let now = now_ms() / 1000;
+        let review = now.saturating_sub(last_review) >= auto_index.review_secs;
 
-        if let Ok(databases) = list_database_names(&mongo).await {
-            for db_name in databases {
-                if let Ok(collections) = list_collection_names(&mongo, &db_name).await {
+        let databases = match list_database_names(&mongo).await {
+            Ok(d) => d,
+            Err(e) => {
+                log_line(LogLevel::Warn, "autoindex_list_databases_failed", Some(json!({ "error": e })));
+                continue;
+            }
+        };
+        let mut existing: HashSet<(String, String)> = HashSet::new();
+        let mut listing_complete = true;
+        for db_name in databases {
+            match list_collection_names(&mongo, &db_name).await {
+                Ok(collections) => {
                     for col_name in collections {
-                        auto_index.check_and_create_indexes(&mongo, &index_mgr, &db_name, &col_name).await;
-                        auto_index.drop_idle_indexes(&mongo, &index_mgr, &db_name, &col_name).await;
+                        existing.insert((db_name.clone(), col_name.clone()));
+                        auto_index.check_and_create_indexes(&mongo, &db_name, &col_name).await;
+                        if review {
+                            auto_index.review_collection(&mongo, &index_mgr, &db_name, &col_name).await;
+                        }
                     }
+                }
+                Err(e) => {
+                    listing_complete = false;
+                    log_line(LogLevel::Warn, "autoindex_list_collections_failed", Some(json!({ "error": e })));
                 }
             }
         }
+        if review {
+            // Solo con un listado completo: si no, se borrarían metadatos de colecciones vivas.
+            if listing_complete {
+                auto_index.sweep_orphans(&index_mgr, &existing).await;
+            }
+            last_review = now;
+        }
+    }
+}
+
+// =============================================================================
+// SERVIDOR gRPC (proto/microservicedb.proto)
+// =============================================================================
+
+/// Expone por gRPC el mismo `process_request` que usa el WebSocket, de modo que
+/// las cachés de Redis, el índice y el autoindexado aplican igual en ambos transportes.
+#[derive(Clone)]
+struct DatabaseServiceImpl {
+    mongo: MongoState,
+    bcast: Broadcaster,
+    request_cache: Option<RequestCache>,
+    doc_cache: Option<RedisDocumentCache>,
+    index_mgr: Option<RedisIndexManager>,
+    auto_index: Option<AutoIndexManager>,
+    auth: Auth,
+}
+
+impl DatabaseServiceImpl {
+    /// Autentica con los metadatos "authorization: Bearer <key>" o "x-api-key: <key>".
+    #[allow(clippy::result_large_err)]
+    fn principal<T>(&self, request: &Request<T>) -> Result<Arc<Principal>, Status> {
+        let md = request.metadata();
+        let get = |k: &str| md.get(k).and_then(|v| v.to_str().ok());
+        let key = auth::key_from_headers(get("authorization"), get("x-api-key"));
+        self.auth.authenticate(key.as_deref()).map_err(|e| {
+            log_line(LogLevel::Warn, "auth_failed", Some(json!({ "transport": "grpc", "error": e })));
+            Status::unauthenticated(e)
+        })
+    }
+}
+
+fn non_empty(s: String) -> Option<String> {
+    if s.trim().is_empty() { None } else { Some(s) }
+}
+
+/// Valor de campo de un evento de cambio; acepta snake_case y camelCase.
+fn event_field<'v>(ev: &'v Value, keys: &[&str]) -> &'v str {
+    keys.iter()
+        .find_map(|k| ev.get(*k).and_then(|v| v.as_str()))
+        .unwrap_or("")
+}
+
+type GrpcStream<T> =
+    std::pin::Pin<Box<dyn tokio_stream::Stream<Item = Result<T, Status>> + Send + 'static>>;
+
+#[tonic::async_trait]
+impl DatabaseService for DatabaseServiceImpl {
+    type StreamChangesStream = GrpcStream<ChangeEvent>;
+    type ExportCollectionStreamStream = GrpcStream<DocumentBatch>;
+
+    async fn action(&self, request: Request<ActionRequest>) -> Result<Response<ActionResponse>, Status> {
+        let principal = self.principal(&request)?;
+        let req = request.into_inner();
+        let payload: Value = if req.payload_json.trim().is_empty() {
+            Value::Object(Map::new())
+        } else {
+            serde_json::from_str(&req.payload_json)
+                .map_err(|e| Status::invalid_argument(format!("Invalid payload_json: {e}")))?
+        };
+        let database_name = opt_str(&payload, "database_name").map(|s| s.to_string());
+        let collections = payload.get("collections").and_then(|v| v.as_array()).map(|arr| {
+            arr.iter().filter_map(|e| e.as_str().map(|s| s.to_string())).collect::<Vec<_>>()
+        });
+        let msg_type = non_empty(req.msg_type).unwrap_or_else(|| "action".to_string());
+        let ws_req = WsRequest {
+            msg_type,
+            category: non_empty(req.category),
+            function_name: non_empty(req.function_name),
+            payload: Some(payload),
+            database_name,
+            collections,
+        };
+        log_line(
+            LogLevel::Debug,
+            "grpc_action_received",
+            Some(json!({
+                "type": ws_req.msg_type,
+                "category": ws_req.category,
+                "function": ws_req.function_name,
+                "request_id": req.request_id,
+            })),
+        );
+        let resp = process_authorized(
+            &principal,
+            ws_req,
+            &self.mongo,
+            &self.bcast,
+            self.request_cache.clone(),
+            self.doc_cache.clone(),
+            self.index_mgr.clone(),
+            self.auto_index.clone(),
+        )
+        .await;
+        Ok(Response::new(ActionResponse {
+            success: resp.success,
+            response_json: resp.response_json,
+            message: resp.message,
+            request_id: req.request_id,
+        }))
+    }
+
+    async fn stream_changes(
+        &self,
+        request: Request<StreamChangesRequest>,
+    ) -> Result<Response<Self::StreamChangesStream>, Status> {
+        let principal = self.principal(&request)?;
+        let filter = Arc::new(request.into_inner());
+        if !filter.database_name.is_empty()
+            && !principal.can_read_collection(&filter.database_name, &filter.collection_name)
+        {
+            return Err(Status::permission_denied(format!(
+                "Permission denied: read access to '{}' required",
+                filter.database_name
+            )));
+        }
+        let stream = BroadcastStream::new(self.bcast.subscribe()).filter_map(move |r| {
+            let filter = filter.clone();
+            let principal = principal.clone();
+            async move {
+                let msg = r.ok()?;
+                if !event_visible(&principal, &msg) {
+                    return None;
+                }
+                let ev: Value = serde_json::from_str(&msg).ok()?;
+                let database_name = event_field(&ev, &["database_name", "databaseName"]).to_string();
+                let collection_name = event_field(&ev, &["collectionName", "collection_name"]).to_string();
+                if !filter.database_name.is_empty() && filter.database_name != database_name {
+                    return None;
+                }
+                if !filter.collection_name.is_empty() && filter.collection_name != collection_name {
+                    return None;
+                }
+                if !filter.include_system
+                    && (is_reserved_database(&database_name)
+                        || (!collection_name.is_empty() && is_reserved_collection(&collection_name)))
+                {
+                    return None;
+                }
+                Some(Ok(ChangeEvent {
+                    event: event_field(&ev, &["event"]).to_string(),
+                    category: event_field(&ev, &["category"]).to_string(),
+                    database_name,
+                    collection_name,
+                    ts_ms: ev.get("ts").and_then(|v| v.as_i64()).unwrap_or_else(|| now_ms() as i64),
+                    event_json: msg,
+                }))
+            }
+        });
+        Ok(Response::new(Box::pin(stream)))
+    }
+
+    async fn export_collection_stream(
+        &self,
+        request: Request<ExportCollectionRequest>,
+    ) -> Result<Response<Self::ExportCollectionStreamStream>, Status> {
+        let principal = self.principal(&request)?;
+        let req = request.into_inner();
+        let need = auth::Need {
+            level: auth::Level::Read,
+            database: Some(req.database_name.clone()),
+            collection: Some(req.collection_name.clone()),
+        };
+        if !principal.allows(&need) {
+            log_line(
+                LogLevel::Warn,
+                "auth_denied",
+                Some(json!({ "principal": principal.name, "function": "ExportCollectionStream",
+                    "database_name": req.database_name, "collectionName": req.collection_name })),
+            );
+            return Err(Status::permission_denied(format!(
+                "Permission denied: role read required on '{}.{}'",
+                req.database_name, req.collection_name
+            )));
+        }
+        if req.database_name.is_empty() || req.collection_name.is_empty() {
+            return Err(Status::invalid_argument("database_name and collection_name are required"));
+        }
+        if is_reserved_collection(&req.collection_name) {
+            return Err(Status::invalid_argument(format!(
+                "Collection '{}' is reserved",
+                req.collection_name
+            )));
+        }
+        let filter: Value = if req.filter_json.trim().is_empty() {
+            Value::Object(Map::new())
+        } else {
+            serde_json::from_str(&req.filter_json)
+                .map_err(|e| Status::invalid_argument(format!("Invalid filter_json: {e}")))?
+        };
+        let bson_filter = value_to_document(&filter).map_err(Status::invalid_argument)?;
+        let batch_size = if req.batch_size == 0 {
+            EXPORT_STREAM_BATCH_SIZE
+        } else {
+            req.batch_size as usize
+        };
+
+        let collection = self
+            .mongo
+            .client
+            .database(&req.database_name)
+            .collection::<Document>(&req.collection_name);
+        let total = collection
+            .count_documents(bson_filter.clone())
+            .await
+            .map_err(|e| Status::internal(format!("MongoDB count failed: {e}")))?;
+        let mut cursor = collection
+            .find(bson_filter)
+            .batch_size(batch_size.min(u32::MAX as usize) as u32)
+            .await
+            .map_err(|e| Status::internal(format!("MongoDB find failed: {e}")))?;
+
+        log_line(
+            LogLevel::Info,
+            "export_stream_start",
+            Some(json!({
+                "database_name": req.database_name,
+                "collectionName": req.collection_name,
+                "total": total,
+                "batch_size": batch_size
+            })),
+        );
+
+        // Canal acotado: si el cliente va lento, se deja de leer de MongoDB hasta que consuma.
+        let (tx, rx) = tokio::sync::mpsc::channel::<Result<DocumentBatch, Status>>(4);
+        tokio::spawn(async move {
+            let mut pending: Vec<String> = Vec::new();
+            let mut pending_bytes = 0usize;
+            let mut sent = 0u64;
+            loop {
+                let next = cursor.next().await;
+                let done = next.is_none();
+                if let Some(res) = next {
+                    let text = res
+                        .map_err(|e| format!("MongoDB cursor error: {e}"))
+                        .and_then(document_to_value)
+                        .and_then(|v| serde_json::to_string(&v).map_err(|e| e.to_string()));
+                    match text {
+                        Ok(text) => {
+                            pending_bytes += text.len();
+                            pending.push(text);
+                        }
+                        Err(e) => {
+                            let _ = tx.send(Err(Status::internal(e))).await;
+                            return;
+                        }
+                    }
+                }
+                let full = pending.len() >= batch_size || pending_bytes >= EXPORT_STREAM_BATCH_BYTES;
+                if full || (done && (!pending.is_empty() || sent == 0)) {
+                    sent += pending.len() as u64;
+                    let batch = DocumentBatch {
+                        documents_json: format!("[{}]", pending.join(",")),
+                        total,
+                        sent,
+                    };
+                    pending.clear();
+                    pending_bytes = 0;
+                    if tx.send(Ok(batch)).await.is_err() {
+                        return;
+                    }
+                }
+                if done {
+                    return;
+                }
+            }
+        });
+        Ok(Response::new(Box::pin(ReceiverStream::new(rx))))
     }
 }
 
@@ -4906,6 +5502,21 @@ async fn auto_index_agent_loop(
 #[tokio::main]
 async fn main() {
     let _ = dotenv();
+
+    if env::args().nth(1).as_deref() == Some("generate-api-key") {
+        let key = auth::generate_api_key();
+        println!("API key (entregar al cliente, no se vuelve a mostrar): {key}");
+        println!("sha256 (para {}): {}", auth::ENV_API_KEYS_FILE, auth::sha256_hex(&key));
+        return;
+    }
+
+    let auth = match Auth::from_env() {
+        Ok(a) => a,
+        Err(e) => {
+            eprintln!("{e}");
+            process::exit(1);
+        }
+    };
 
     let config = match load_app_config() {
         Ok(c) => c,
@@ -4961,14 +5572,29 @@ async fn main() {
         });
     }
 
+    let grpc_service = DatabaseServiceImpl {
+        mongo: mongo.clone(),
+        bcast: bcast_tx.clone(),
+        request_cache: request_cache.clone(),
+        doc_cache: doc_cache.clone(),
+        index_mgr: index_mgr.clone(),
+        auto_index: auto_index.clone(),
+        auth: auth.clone(),
+    };
+
     let mongo_for_ws = mongo.clone();
     let request_cache_for_ws = request_cache.clone();
     let doc_cache_for_ws = doc_cache.clone();
     let index_mgr_for_ws = index_mgr.clone();
     let auto_index_for_ws = auto_index.clone();
 
+    let auth_for_ws = auth.clone();
     let ws = warp::path("ws")
         .and(warp::ws())
+        .and(warp::header::optional::<String>("authorization"))
+        .and(warp::header::optional::<String>("x-api-key"))
+        .and(warp::query::raw().or(warp::any().map(String::new)).unify())
+        .and(warp::any().map(move || auth_for_ws.clone()))
         .and(warp::any().map(move || mongo_for_ws.clone()))
         .and(warp::any().map(move || bcast_tx.clone()))
         .and(warp::any().map(move || request_cache_for_ws.clone()))
@@ -4977,18 +5603,34 @@ async fn main() {
         .and(warp::any().map(move || auto_index_for_ws.clone()))
         .and_then(
             |ws: warp::ws::Ws,
+             authorization: Option<String>,
+             x_api_key: Option<String>,
+             query: String,
+             auth: Auth,
              mongo: MongoState,
              bcast: Broadcaster,
              request_cache: Option<RequestCache>,
              doc_cache: Option<RedisDocumentCache>,
              index_mgr: Option<RedisIndexManager>,
              auto_index: Option<AutoIndexManager>| async move {
-                Ok::<_, warp::Rejection>(
-                    ws.on_upgrade(move |socket| handle_socket(
-                        socket, mongo, bcast,
+                // Los navegadores no pueden enviar cabeceras en WebSocket: se acepta también ?api_key=.
+                let from_query = query
+                    .split('&')
+                    .find_map(|kv| kv.strip_prefix("api_key="))
+                    .map(|v| v.to_string());
+                let key = auth::key_from_headers(authorization.as_deref(), x_api_key.as_deref())
+                    .or(from_query);
+                let reply: Box<dyn warp::Reply> = match auth.authenticate(key.as_deref()) {
+                    Ok(principal) => Box::new(ws.on_upgrade(move |socket| handle_socket(
+                        socket, principal, mongo, bcast,
                         request_cache, doc_cache, index_mgr, auto_index
-                    )),
-                )
+                    ))),
+                    Err(e) => {
+                        log_line(LogLevel::Warn, "auth_failed", Some(json!({ "transport": "websocket", "error": e })));
+                        Box::new(warp::reply::with_status(e, StatusCode::UNAUTHORIZED))
+                    }
+                };
+                Ok::<_, warp::Rejection>(reply)
             },
         );
 
@@ -5026,26 +5668,166 @@ async fn main() {
     }
 
     let local_ip = get_local_ip();
+    println!("Profile: {}", config.profile.name());
+    if auth.enabled() {
+        println!("Auth: REQUIRED ({} API keys)", auth.key_count());
+    } else {
+        println!("Auth: DISABLED ({}=disabled) - do not use in production", auth::ENV_AUTH);
+    }
 
-    match tls {
-        Some((cert_path, key_path)) => {
-            println!("JSON DB Server running on https://{}:{}", local_ip, config.port);
-            println!("WebSocket endpoint: wss://{}:{}/ws", local_ip, config.port);
-            warp::serve(routes)
-                .tls()
-                .cert_path(cert_path)
-                .key_path(key_path)
-                .run((host, config.port))
-                .await;
+    let http_port = config.port;
+    let http_future = async move {
+        match tls {
+            Some((cert_path, key_path)) => {
+                println!("JSON DB Server running on https://{}:{}", local_ip, http_port);
+                println!("WebSocket endpoint: wss://{}:{}/ws", local_ip, http_port);
+                warp::serve(routes)
+                    .tls()
+                    .cert_path(cert_path)
+                    .key_path(key_path)
+                    .run((host, http_port))
+                    .await;
+            }
+            None => {
+                println!("JSON DB Server running on http://{}:{}", local_ip, http_port);
+                println!("WebSocket endpoint: ws://{}:{}/ws", local_ip, http_port);
+                println!(
+                    "HTTPS/WSS not enabled: set {} and {} to activate it",
+                    ENV_SSL_CERT_PATH, ENV_SSL_KEY_PATH
+                );
+                warp::serve(routes).run((host, http_port)).await;
+            }
         }
-        None => {
-            println!("JSON DB Server running on http://{}:{}", local_ip, config.port);
-            println!("WebSocket endpoint: ws://{}:{}/ws", local_ip, config.port);
-            println!(
-                "HTTPS/WSS not enabled: set {} and {} to activate it",
-                ENV_SSL_CERT_PATH, ENV_SSL_KEY_PATH
+    };
+
+    let grpc_addr = std::net::SocketAddr::from((host, config.grpc_port));
+    // gRPC usa el mismo certificado que HTTPS/WSS (MICROSERVICEDB_SSL_CERT / MICROSERVICEDB_SSL_KEY).
+    let mut grpc_builder = TonicServer::builder();
+    match grpc_tls_identity() {
+        Ok(Some(identity)) => {
+            grpc_builder = match grpc_builder.tls_config(tonic::transport::ServerTlsConfig::new().identity(identity)) {
+                Ok(b) => b,
+                Err(e) => {
+                    eprintln!("Invalid gRPC TLS configuration: {e}");
+                    process::exit(1);
+                }
+            };
+            println!("gRPC Server running on {} (TLS)", grpc_addr);
+        }
+        Ok(None) => println!("gRPC Server running on {} (plaintext, no TLS)", grpc_addr),
+        Err(e) => {
+            eprintln!("{e}");
+            process::exit(1);
+        }
+    }
+    let grpc_future = grpc_builder
+        .add_service(
+            DatabaseServiceServer::new(grpc_service)
+                .max_decoding_message_size(usize::MAX)
+                .max_encoding_message_size(usize::MAX),
+        )
+        .serve(grpc_addr);
+
+    // Si cualquiera de los dos servidores termina, el proceso sale con error.
+    tokio::select! {
+        _ = http_future => {
+            log_line(LogLevel::Error, "http_server_stopped", None);
+            process::exit(1);
+        }
+        res = grpc_future => {
+            log_line(
+                LogLevel::Error,
+                "grpc_server_stopped",
+                Some(json!({ "error": res.err().map(|e| e.to_string()) })),
             );
-            warp::serve(routes).run((host, config.port)).await;
+            process::exit(1);
         }
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn bson(v: &Value) -> Document {
+        value_to_document(&translate_filter(v)).expect("filtro traducido debe ser BSON válido")
+    }
+
+    #[test]
+    fn plain_equality_passes_through() {
+        assert_eq!(translate_filter(&json!({"name": "ana"})), json!({"name": "ana"}));
+        assert_eq!(translate_filter(&json!({})), json!({}));
+    }
+
+    #[test]
+    fn object_id_text_matches_both_forms() {
+        let id = "65a1b2c3d4e5f60718293a4b";
+        let t = translate_filter(&json!({ "_id": id }));
+        assert_eq!(t, json!({ "_id": { "$in": [ { "$oid": id }, id ] } }));
+        let d = bson(&json!({ "_id": id }));
+        let arr = d.get_document("_id").unwrap().get_array("$in").unwrap();
+        assert!(matches!(arr[0], mongodb::bson::Bson::ObjectId(_)));
+        assert!(matches!(arr[1], mongodb::bson::Bson::String(_)));
+        // {"$oid": ...} también se trata como valor, no como operador.
+        let t2 = translate_filter(&json!({ "_id": { "$oid": id } }));
+        assert_eq!(t2, t);
+    }
+
+    #[test]
+    fn operators_keep_previous_semantics() {
+        assert_eq!(
+            translate_filter(&json!({ "a": { "$exists": true } })),
+            json!({ "a": { "$exists": true, "$ne": null } })
+        );
+        assert_eq!(translate_filter(&json!({ "a": { "$exists": false } })), json!({ "a": null }));
+        assert_eq!(
+            translate_filter(&json!({ "a": { "$nin": [1, 2] } })),
+            json!({ "$and": [ { "a": { "$exists": true } }, { "a": { "$nin": [1, 2] } } ] })
+        );
+        assert_eq!(
+            translate_filter(&json!({ "a": { "$gte": 1, "$lt": 5 } })),
+            json!({ "$and": [ { "a": { "$gte": 1 } }, { "a": { "$lt": 5 } } ] })
+        );
+        assert_eq!(
+            translate_filter(&json!({ "a": { "$regex": "^x", "$options": "i" } })),
+            json!({ "a": { "$regex": "^x", "$options": "i" } })
+        );
+        assert_eq!(translate_filter(&json!({ "a": { "$in": 3 } })), json!({ "$expr": false }));
+        assert_eq!(translate_filter(&json!({ "$or": [] })), json!({ "$expr": false }));
+    }
+
+    #[test]
+    fn logical_operators_recurse() {
+        let id = "65a1b2c3d4e5f60718293a4b";
+        let t = translate_filter(&json!({ "$or": [ { "_id": id }, { "n": 1 } ], "x": 2 }));
+        assert_eq!(
+            t,
+            json!({ "$and": [
+                { "$or": [ { "_id": { "$in": [ { "$oid": id }, id ] } }, { "n": 1 } ] },
+                { "x": 2 }
+            ] })
+        );
+        assert_eq!(translate_filter(&json!({ "$not": { "a": 1 } })), json!({ "$nor": [ { "a": 1 } ] }));
+        bson(&json!({ "$not": { "a": { "$in": [1] } }, "b": { "$ne": id } }));
+    }
+
+    #[test]
+    fn extended_json_dates_are_values() {
+        let f = json!({ "at": { "$date": { "$numberLong": "1700000000000" } } });
+        let d = bson(&f);
+        assert!(matches!(d.get("at"), Some(mongodb::bson::Bson::DateTime(_))));
+    }
+}
+
+#[cfg(test)]
+mod projection_tests {
+    use super::*;
+
+    #[test]
+    fn include_with_id_excluded() {
+        let doc = json!({ "_id": 1, "sku": "a", "price": 3 });
+        assert_eq!(apply_projection(&doc, &json!({ "sku": 1, "_id": 0 })), json!({ "sku": "a" }));
+        assert_eq!(apply_projection(&doc, &json!({ "sku": 1 })), json!({ "_id": 1, "sku": "a" }));
+        assert_eq!(apply_projection(&doc, &json!({ "price": 0 })), json!({ "_id": 1, "sku": "a" }));
+        assert_eq!(apply_projection(&doc, &json!({ "_id": 0 })), json!({ "sku": "a", "price": 3 }));
     }
 }

@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MicroserviceDB MongoDB Manager</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,200..800;1,200..800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+</head>
+<body>
+    <div class="app">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <span class="logo-icon">🍃</span>
+                    <div>
+                        <h1>MicroserviceDB MongoDB Manager</h1>
+                        <span class="version">Web Edition</span>
+                    </div>
+                </div>
+            </div>
+            <nav class="nav-tabs">
+                <button class="nav-tab active" data-tab="connect">
+                    <span class="tab-icon">🔌</span>
+                    <span>Conectar</span>
+                </button>
+                <button class="nav-tab" data-tab="select">
+                    <span class="tab-icon">📂</span>
+                    <span>Seleccionar</span>
+                </button>
+                <button class="nav-tab" data-tab="run">
+                    <span class="tab-icon">▶️</span>
+                    <span>Ejecutar</span>
+                </button>
+                <button class="nav-tab" data-tab="results">
+                    <span class="tab-icon">📊</span>
+                    <span>Resultados</span>
+                </button>
+            </nav>
+            <div class="sidebar-footer">
+                <div class="status-indicator" id="connectionStatus">
+                    <span class="status-dot offline"></span>
+                    <span class="status-text">Sin conexión</span>
+                </div>
+            </div>
+        </aside>
+        <!-- Main Content -->
+        <main class="main">
+            <!-- Header -->
+            <header class="main-header">
+                <h2 id="pageTitle">Conectar a MongoDB</h2>
+                <div class="mode-switcher">
+                    <button id="themeToggle" class="btn btn-ghost btn-small" title="Cambiar tema" style="gap:6px;padding:8px 12px;">🌙</button>
+                    <label class="mode-label">Modo:</label>
+                    <div class="mode-toggle">
+                        <input type="radio" name="mode" value="export" id="modeExport" checked>
+                        <label for="modeExport">📤 Exportar JSON</label>
+                        <input type="radio" name="mode" value="copy" id="modeCopy">
+                        <label for="modeCopy">🔄 Copiar MongoDB</label>
+                    </div>
+                </div>
+            </header>
+            <!-- Tab: Connect -->
+            <section class="tab-panel active" id="tab-connect">
+                <div class="card-grid">
+                    <!-- Source Connection -->
+                    <div class="card">
+                        <div class="card-header">
+                            <span class="card-icon">🔌</span>
+                            <h3>Conexión Origen</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="form-group">
+                                <label>URI MongoDB</label>
+                                <input type="text" id="sourceUri" class="input" value="mongodb://localhost:27017/" placeholder="mongodb://user:pass@host:port/">
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group checkbox-group">
+                                    <label class="checkbox">
+                                        <input type="checkbox" id="sourceX509">
+                                        <span class="checkmark"></span>
+                                        Usar X.509
+                                    </label>
+                                </div>
+                                <div class="form-group file-group" id="sourceX509Group" style="display:none;">
+                                    <label>Certificado .pem</label>
+                                    <input type="file" id="sourceX509File" class="input-file" accept=".pem">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Destination Connection (Copy mode) -->
+                    <div class="card" id="destConnectionCard" style="display:none;">
+                        <div class="card-header">
+                            <span class="card-icon">🎯</span>
+                            <h3>Conexión Destino</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="form-group">
+                                <label>URI MongoDB Destino</label>
+                                <input type="text" id="destUri" class="input" value="mongodb://localhost:27017/" placeholder="mongodb://user:pass@host:port/">
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group checkbox-group">
+                                    <label class="checkbox">
+                                        <input type="checkbox" id="destX509">
+                                        <span class="checkmark"></span>
+                                        Usar X.509
+                                    </label>
+                                </div>
+                                <div class="form-group file-group" id="destX509Group" style="display:none;">
+                                    <label>Certificado .pem</label>
+                                    <input type="file" id="destX509File" class="input-file" accept=".pem">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Advanced Options -->
+                    <div class="card">
+                        <div class="card-header">
+                            <span class="card-icon">⚙️</span>
+                            <h3>Opciones Avanzadas</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Timeout (ms)</label>
+                                    <input type="number" id="timeoutMs" class="input" value="3600000" min="1000" max="3600000" step="1000">
+                                </div>
+                                <div class="form-group">
+                                    <label>Carpeta de salida</label>
+                                    <input type="text" id="outputDir" class="input" value="./mongo_export">
+                                </div>
+                            </div>
+                            <div class="form-group checkbox-group">
+                                <label class="checkbox">
+                                    <input type="checkbox" id="includeSystem">
+                                    <span class="checkmark"></span>
+                                    Incluir DBs de sistema (admin, local, config, test)
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="actions-bar">
+                    <button class="btn btn-primary" id="btnTestSource">
+                        <span class="btn-icon">🔌</span>
+                        Probar conexión origen
+                    </button>
+                    <button class="btn btn-secondary" id="btnTestDest" style="display:none;">
+                        <span class="btn-icon">🎯</span>
+                        Probar conexión destino
+                    </button>
+                </div>
+                <div class="info-box">
+                    <strong>Instrucciones:</strong>
+                    <ol>
+                        <li>Ingresa la URI de conexión en la tarjeta correspondiente.</li>
+                        <li>Si usas X.509, marca el checkbox y sube tu archivo <code>.pem</code>.</li>
+                        <li>Haz clic en <strong>Probar conexión</strong> para listar las bases de datos disponibles.</li>
+                        <li>Luego ve a la pestaña <strong>Seleccionar</strong> para elegir DBs y colecciones.</li>
+                    </ol>
+                </div>
+            </section>
+            <!-- Tab: Select -->
+            <section class="tab-panel" id="tab-select">
+                <div class="empty-state" id="selectEmptyState">
+                    <div class="empty-icon">📂</div>
+                    <h3>Sin conexión activa</h3>
+                    <p>Primero debes conectarte en la pestaña "Conectar" para listar las bases de datos.</p>
+                </div>
+                <div id="selectContent" style="display:none;">
+                    <div class="card">
+                        <div class="card-header">
+                            <span class="card-icon">🗄️</span>
+                            <h3>Bases de datos disponibles</h3>
+                            <span class="badge" id="dbCountBadge">0</span>
+                        </div>
+                        <div class="card-body">
+                            <div class="db-selector" id="dbSelector">
+                                <!-- Generated by JS -->
+                            </div>
+                        </div>
+                    </div>
+                    <div id="collectionsContainer">
+                        <!-- Generated by JS -->
+                    </div>
+                    <div class="summary-bar">
+                        <div class="summary-item">
+                            <span class="summary-label">DBs seleccionadas:</span>
+                            <span class="summary-value" id="summaryDbs">0</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="summary-label">Colecciones totales:</span>
+                            <span class="summary-value" id="summaryCols">0</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+            <!-- Tab: Run -->
+            <section class="tab-panel" id="tab-run">
+                <div class="empty-state" id="runEmptyState">
+                    <div class="empty-icon">▶️</div>
+                    <h3>Listo para ejecutar</h3>
+                    <p>Selecciona DBs y colecciones en la pestaña anterior para activar esta sección.</p>
+                </div>
+                <div id="runContent" style="display:none;">
+                    <div class="card run-summary">
+                        <div class="card-header">
+                            <span class="card-icon">📋</span>
+                            <h3>Resumen de selección</h3>
+                        </div>
+                        <div class="card-body">
+                            <div id="runSummaryContent"></div>
+                        </div>
+                    </div>
+                    <div class="actions-bar center">
+                        <button class="btn btn-danger btn-large" id="btnRun">
+                            <span class="btn-icon">🚀</span>
+                            INICIAR OPERACIÓN
+                        </button>
+                    </div>
+                    <!-- Progress -->
+                    <div class="progress-container" id="progressContainer" style="display:none;">
+                        <div class="progress-header">
+                            <span class="progress-title">Procesando...</span>
+                            <span class="progress-percent" id="progressPercent">0%</span>
+                        </div>
+                        <div class="progress-bar-bg">
+                            <div class="progress-bar-fill" id="progressBar" style="width:0%"></div>
+                        </div>
+                        <p class="progress-message" id="progressMessage">Iniciando...</p>
+                    </div>
+                    <!-- Logs -->
+                    <div class="logs-container" id="logsContainer" style="display:none;">
+                        <div class="logs-header">
+                            <span>📝 Logs en tiempo real</span>
+                            <button class="btn btn-small btn-ghost" id="btnClearLogs">Limpiar</button>
+                        </div>
+                        <div class="logs-body" id="logsBody"></div>
+                    </div>
+                </div>
+            </section>
+            <!-- Tab: Results -->
+            <section class="tab-panel" id="tab-results">
+                <div class="empty-state" id="resultsEmptyState">
+                    <div class="empty-icon">📊</div>
+                    <h3>Sin resultados aún</h3>
+                    <p>Ejecuta una operación para ver los resultados aquí.</p>
+                </div>
+                <div id="resultsContent" style="display:none;">
+                    <div class="result-status" id="resultStatus"></div>
+                    <div class="metrics-grid" id="metricsGrid">
+                        <div class="metric-card">
+                            <span class="metric-icon">🗄️</span>
+                            <span class="metric-value" id="metricDbs">0</span>
+                            <span class="metric-label">Bases de datos</span>
+                        </div>
+                        <div class="metric-card">
+                            <span class="metric-icon">📁</span>
+                            <span class="metric-value" id="metricCols">0</span>
+                            <span class="metric-label">Colecciones</span>
+                        </div>
+                        <div class="metric-card">
+                            <span class="metric-icon">📄</span>
+                            <span class="metric-value" id="metricDocs">0</span>
+                            <span class="metric-label">Documentos</span>
+                        </div>
+                        <div class="metric-card">
+                            <span class="metric-icon">⏱️</span>
+                            <span class="metric-value" id="metricDuration">-</span>
+                            <span class="metric-label">Duración</span>
+                        </div>
+                    </div>
+                    <div class="card" id="errorsCard" style="display:none;">
+                        <div class="card-header">
+                            <span class="card-icon">❌</span>
+                            <h3>Errores</h3>
+                        </div>
+                        <div class="card-body">
+                            <div id="errorsList"></div>
+                        </div>
+                    </div>
+                    <div class="card" id="warningsCard" style="display:none;">
+                        <div class="card-header">
+                            <span class="card-icon">⚠️</span>
+                            <h3>Advertencias</h3>
+                        </div>
+                        <div class="card-body">
+                            <div id="warningsList"></div>
+                        </div>
+                    </div>
+                    <div class="card" id="filesCard" style="display:none;">
+                        <div class="card-header">
+                            <span class="card-icon">📁</span>
+                            <h3>Archivos generados</h3>
+                        </div>
+                        <div class="card-body">
+                            <div id="filesList"></div>
+                        </div>
+                    </div>
+                    <div class="actions-bar center" id="downloadActions" style="display:none;">
+                        <button class="btn btn-primary btn-large" id="btnDownloadZip">
+                            <span class="btn-icon">⬇️</span>
+                            Descargar todo como ZIP
+                        </button>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+    <!-- Toast notifications -->
+    <div class="toast-container" id="toastContainer"></div>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
