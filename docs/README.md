@@ -43,411 +43,572 @@ Servidor de base de datos JSON escrito íntegramente en <strong>Rust asíncrono<
   <img src="https://github.com/MGNG13/MicroserviceDB/blob/main/docs/screenshots/8.png?raw=true">
 </center>
 
-## 📑 Índice
+Microservicio en Rust que expone MongoDB por **WebSocket** y **gRPC**, con **Dragonfly** (compatible con Redis) como única caché, **autoindexado** por uso, autenticación por **API key con roles**, **TLS** y un **panel web** de administración.
 
-1. [📌 Descripción General](#-descripción-general)
-2. [✨ Características Principales](#-características-principales)
-3. [🧠 Stack Tecnológico](#-stack-tecnológico)
-4. [🏗️ Arquitectura](#️-arquitectura)
-5. [📋 Requisitos Previos](#-requisitos-previos)
-6. [🚀 Instalación Rápida](#-instalación-rápida)
-   - [Con Docker Compose (recomendado)](#con-docker-compose-recomendado)
-   - [Desde fuente](#desde-fuente)
-7. [⚙️ Configuración](#️-configuración)
-   - [Credenciales MongoDB](#credenciales-mongodb)
-   - [Variables de Entorno](#variables-de-entorno)
-   - [CLI](#cli)
-8. [🌐 Endpoints HTTP](#-endpoints-http)
-9. [🔌 API WebSocket](#-api-websocket)
-   - [Formato de Petición](#formato-de-petición)
-   - [Formato de Respuesta](#formato-de-respuesta)
-   - [Comandos de `type`](#comandos-de-type)
-   - [Categoría `collection`](#categoría-collection)
-   - [Categoría `database`](#categoría-database)
-   - [Eventos (change-stream)](#eventos-change-stream)
-10. [📦 Librerías Cliente](#-librerías-cliente)
-    - [TypeScript / Browser / Node.js](#typescript--browser--nodejs)
-    - [Rust](#rust)
-11. [🖥️ Panel Administrativo Web](#️-panel-administrativo-web)
-12. [🧩 Caché y Auto-Indexado](#-caché-y-auto-indexado)
-13. [💾 Backups Automáticos](#-backups-automáticos)
-14. [🛠️ Scripts Utilitarios](#️-scripts-utilitarios)
-15. [🧰 Builds Multiplataforma](#-builds-multiplataforma)
-16. [📄 Licencia](#-licencia)
+- MongoDB es la fuente de verdad: todas las escrituras son operaciones nativas confirmadas por mayoría de nodos (`w: majority` + journal).
+- Dragonfly guarda solo caché (documentos y respuestas) y los metadatos del autoindexado: si se vacía, no se pierde ningún dato.
+- Un mismo protocolo de acciones (`find`, `insertOne`, `createIndex`…) por WebSocket o gRPC, con clientes listos en TypeScript y Rust.
 
-## 📌 Descripción General
+---
 
-**MicroserviceDB** es un servidor de base de datos JSON escrito íntegramente en **Rust asíncrono** (Tokio + Warp + MongoDB) que expone toda su operativa a través de **WebSocket bidireccional**. Se sitúa como capa intermedia entre tu aplicación y MongoDB, añadiendo:
+## Índice
 
-- Panel administrativo SPA embebido en el binario (sin build step de frontend).
-- Caché multi-nivel: caché de requests en Redis/Dragonfly + caché de documentos + gestor de índices.
-- **Auto-indexado** dinámico basado en patrones de consulta.
-- Backups incrementales cada 30 min comprimidos con 7-Zip.
-- Change-streams broadcast vía WebSocket (`insertOne`, `updateOne`, `replaceOne`, `deleteOne`, …).
-- API compatible con el estilo de MongoDB (`find`, `findOne`, `insertOne`, `updateOne`, `deleteMany`, …).
-- TLS/SSL nativo configurable con dos variables de entorno.
+1. [Arquitectura](#arquitectura)
+2. [Inicio rápido con Docker](#inicio-rápido-con-docker)
+3. [Ejecutar desde el código fuente](#ejecutar-desde-el-código-fuente)
+4. [Conectarse con un administrador de bases de datos](#conectarse-con-un-administrador-de-bases-de-datos)
+5. [Autenticación y roles](#autenticación-y-roles)
+6. [TLS](#tls)
+7. [Configuración](#configuración)
+8. [API](#api)
+9. [Índices y autoindexado](#índices-y-autoindexado)
+10. [Caché](#caché)
+11. [Librerías cliente](#librerías-cliente)
+12. [Panel web](#panel-web)
+13. [Backups](#backups)
+14. [Rendimiento](#rendimiento)
+15. [Solución de problemas](#solución-de-problemas)
+16. [Estructura del proyecto](#estructura-del-proyecto)
 
-El binario resultante es único y autocontenido; el panel HTML se sirve desde el propio ejecutable.
+---
 
-## ✨ Características Principales
+## Arquitectura
 
-| Capa                      | Detalle                                                             |
-| ------------------------- | ------------------------------------------------------------------- |
-| ⚙️ **Runtime**            | Rust 1.80+, Tokio async runtime completo                            |
-| 🌐 **Servidor**           | Warp 0.3 con TLS nativo (rustls)                                    |
-| 🗄️ **Persistencia**       | MongoDB 7.x (driver oficial 3.x), compatible con sharded clusters   |
-| ⚡ **Caché**               | Redis / Dragonfly (opcional) — requests, documentos e índices       |
-| 🧠 **Auto-indexado**      | Monitoriza campos frecuentemente consultados y propone/crea índices |
-| 🔌 **Protocolo**          | WebSocket + JSON (principal) · HTTP POST `/event` (debug UI)        |
-| 🖥️ **Panel Web**          | SPA en `MicroserviceDB.html` embebida con `include_str!`            |
-| 💾 **Backups**            | JSON completo + 7z (LZMA2, nivel 9), con rotación de 2 slots/hora   |
-| 📦 **Clientes oficiales** | TypeScript (browser + Node) y Rust                                  |
-| 🚀 **Despliegue**         | Binario único · Docker Compose para Mongo sharded + Dragonfly       |
-
-## 🧠 Stack Tecnológico
-
-| Tecnología               | Rol en el proyecto                            |
-| ------------------------ | --------------------------------------------- |
-| **Rust (edición 2021)**  | Lenguaje central del servidor                 |
-| **Tokio**                | Runtime asíncrono y concurrencia              |
-| **Warp**                 | Servidor HTTP/WebSocket con TLS (rustls)      |
-| **MongoDB (driver 3.x)** | Persistencia, compatible con clusters sharded |
-| **Redis / Dragonfly**    | Caché de requests, documentos e índices       |
-| **7-Zip (LZMA2)**        | Compresión de backups                         |
-| **TypeScript & Rust**    | Librerías cliente oficiales                   |
-| **Docker Compose**       | Orquestación del cluster de desarrollo        |
-
-## 🏗️ Arquitectura
-
-```
-┌──────────────────────────────────────────────────────────────┐
-│                   Aplicación / Panel Web                     │
-│         (TypeScript / Rust client vía WebSocket)             │
-└──────────────────────┬───────────────────────────────────────┘
-                       │  ws(s)://host:3329/ws
-                       ▼
-┌──────────────────────────────────────────────────────────────┐
-│                 MicroserviceDB (Rust / Tokio)                │
-│  ┌────────────┐  ┌────────────┐  ┌────────────────────────┐  │
-│  │ Warp HTTP  │  │ Ws Router  │  │   Broadcast (tokio-    │  │
-│  │  + TLS     │  │            │  │      broadcast)        │  │
-│  └─────┬──────┘  └─────┬──────┘  └───────────┬────────────┘  │
-│        │               │                     │               │
-│  ┌─────┴───────────────┴─────────────────────┴────────────┐  │
-│  │                    Motor MongoDB                       │  │
-│  │  list · find · insert/update/delete · agg · admin ops  │  │
-│  └─────┬──────────────────────┬───────────────────────────┘  │
-│        │                      │                              │
-│  ┌─────┴──────┐         ┌─────┴──────────────────────────┐   │
-│  │ Caché L1   │         │  Auto-index manager            │   │
-│  │ Dragonfly  │         │  + Redis index manager         │   │
-│  └────────────┘         └────────────────────────────────┘   │
-└──────────────────────┬───────────────────────────────────────┘
-                       │
-                       ▼
-       ┌───────────────────────────────┐
-       │ MongoDB Standalone / Sharded  │
-       └───────────────────────────────┘
+```mermaid
+flowchart LR
+    subgraph Clientes
+        UI[Panel web]
+        TS[Cliente TypeScript]
+        RS[Cliente Rust]
+        PM[Postman / grpcurl]
+    end
+    subgraph MicroserviceDB
+        WS[":3329 HTTP + WebSocket"]
+        GR[":3330 gRPC"]
+        CORE[Procesador de acciones<br/>auth · RBAC · caché · autoindexado]
+    end
+    DF[(Dragonfly<br/>caché + metadatos)]
+    subgraph MongoDB
+        MS[mongos x2]
+        SH[3 shards x 3 réplicas]
+        CF[config RS]
+    end
+    UI & TS & PM --> WS
+    TS & RS & PM --> GR
+    WS --> CORE
+    GR --> CORE
+    CORE <--> DF
+    CORE <--> MS
+    MS --> SH
+    MS --> CF
 ```
 
-## 📋 Requisitos Previos
+| Puerto | Servicio |
+|---|---|
+| `3329` | Panel web (`/`), WebSocket (`/ws`) |
+| `3330` | gRPC (`proto/microservicedb.proto`) |
+| `27017`, `27020` | Routers mongos (compose) |
+| `6379` | Dragonfly (compose) |
 
-| Componente            | Versión mínima                                           |
-| --------------------- | -------------------------------------------------------- |
-| **Rust**              | 1.78 (edición 2021)                                      |
-| **MongoDB**           | 6.0+ (recomendado 7.x)                                   |
-| **Redis / Dragonfly** | Cualquier versión compatible RESP2 (opcional)            |
-| **7-Zip**             | Si se usa `--backup` (ejecutable `7z` o `7za` en `PATH`) |
-| **Node.js**           | Solo si usas la librería TypeScript cliente (opcional)   |
+---
 
-## 🚀 Instalación Rápida
+## Inicio rápido con Docker
 
-### Con Docker Compose (recomendado)
+Requisitos: Docker Desktop y PowerShell 7.
 
-Levanta un **cluster sharded de MongoDB (3 shards × 3 nodos)** + **mongos router** + **Dragonfly** alojado en el mismo `docker-compose.yml`:
-
-```bash
-# Windows (PowerShell)
-scripts\install\docker-compose_windows.ps1 up -d
-
-# Linux / macOS
-bash scripts/install/docker-compose_linux_mac.sh up -d
-
-# O directamente
-docker compose -f scripts/install/docker-compose.yml up -d
+```powershell
+.\scripts\install\docker-compose_windows.ps1
 ```
 
-Lanza MicroserviceDB apuntando al cluster por defecto (las credenciales ya vienen listas en el `.env` de ejemplo):
+El instalador:
 
-```bash
-cargo run --release
+1. Genera los secretos la primera vez en `scripts/install/.env` (no lo subas al repositorio):
+   `MICROSERVICEDB_ADMIN_API_KEY`, `MONGO_ADMIN_PASSWORD`, `MONGO_KEYFILE_CONTENT`, `DRAGONFLY_PASSWORD`.
+2. Levanta el clúster: config RS (3 nodos), 3 shards × 3 réplicas, 2 mongos y Dragonfly, todo con autenticación (`--keyFile` en MongoDB, `--requirepass` en Dragonfly).
+3. Inicializa los replica sets, crea el usuario `admin` y registra los shards.
+4. Construye y arranca el contenedor `microservicedb`.
+
+Se puede ejecutar de nuevo sin problema: detecta lo que ya está hecho.
+
+Al terminar:
+
+| Qué | Dónde |
+|---|---|
+| Panel web | http://localhost:3329/ |
+| WebSocket | `ws://localhost:3329/ws` |
+| gRPC | `localhost:3330` |
+| API key de admin | `MICROSERVICEDB_ADMIN_API_KEY` en `scripts/install/.env` |
+
+Comandos útiles (desde `scripts/install`):
+
+```powershell
+docker compose --profile app up -d --build microservicedb
 ```
 
-### Desde fuente
+```powershell
+docker compose --profile app logs -f microservicedb
+```
 
-```bash
-git clone https://github.com/MGNG13/MicroserviceDB.git
-cd MicroserviceDB
+```powershell
+docker compose --profile app down
+```
+
+`down -v` borra también los volúmenes (todos los datos).
+
+---
+
+## Ejecutar desde el código fuente
+
+Requisitos: Rust estable. `protoc` no hace falta (se incluye con `protoc-bin-vendored`).
+
+```powershell
 cargo build --release
-# El binario queda en target/release/microservice-db[.exe]
-./target/release/microservice-db --backup
 ```
 
-## ⚙️ Configuración
-
-### Credenciales MongoDB
-
-Credenciales por defecto del cluster MongoDB incluido en el `docker-compose.yml`:
-
-| Campo          | Valor                       |
-| -------------- | --------------------------- |
-| **Usuario**    | `admin`                     |
-| **Contraseña** | `MicroserviceDB2026_MGNG13` |
-
-URI de conexión resultante:
-
-```
-mongodb://admin:MicroserviceDB2026_MGNG13@localhost:27017,localhost:27020/?authSource=admin
+```powershell
+$env:MICROSERVICEDB_MONGODB_URI = "mongodb://admin:<password>@localhost:27017/?authSource=admin"
+$env:MICROSERVICEDB_DRAGONFLY_URL = "redis://:<password>@localhost:6379"
+$env:MICROSERVICEDB_ADMIN_API_KEY = "<key de al menos 32 caracteres>"
+.\target\release\microservice-db.exe
 ```
 
-> ⚠️ Estas credenciales son para entornos de desarrollo. Cámbialas en producción.
+Las variables también se pueden poner en un archivo `.env` junto al ejecutable.
 
-### Variables de Entorno
+Generar una API key nueva (imprime la key y su SHA-256):
 
-Edita el archivo `.env` en la raíz del proyecto (se carga con `dotenvy`). Todas las variables están prefijadas con `MICROSERVICEDB_` excepto los TTL de caché.
-
-| Variable                              | Obligatoria      | Default                       | Descripción                                                                        |
-| ------------------------------------- | ---------------- | ----------------------------- | ---------------------------------------------------------------------------------- |
-| `MICROSERVICEDB_MONGODB_URI`          | ✅               | `mongodb://admin:MicroserviceDB2026_MGNG13@localhost:27017,localhost:27020/?authSource=admin` | URI de MongoDB (standalone, replSet o sharded `mongodb://mongos`)                  |
-| `MICROSERVICEDB_DRAGONFLY_URL`        | ❌               | —                             | URL de Redis/Dragonfly. Sin ella, la caché se desactiva pero el servidor funciona. |
-| `MICROSERVICEDB_PORT`                 | ❌               | `3329`                        | Puerto HTTP / WebSocket                                                            |
-| `MICROSERVICEDB_LOG_LEVEL`            | ❌               | `info`                        | `error \| warn \| info \| debug \| trace`                                          |
-| `REQUEST_CACHE_TTL_SECS`              | ❌               | `300` (5 min)                 | TTL en segundos de entradas en caché de requests                                   |
-| `MICROSERVICEDB_BACKUP_DIR`           | ❌ si `--backup` | `./backups`                   | Directorio donde almacenar los backups                                             |
-| `MICROSERVICEDB_BACKUP_INTERVAL_MINS` | ❌               | `30`                          | Intervalo entre backups (minutos)                                                  |
-| `MICROSERVICEDB_SSL_CERT`             | ❌               | —                             | Ruta a certificado PEM (activa HTTPS/WSS)                                          |
-| `MICROSERVICEDB_SSL_KEY`              | ❌               | —                             | Ruta a clave privada PEM (requerido si se usa cert)                                |
-
-### CLI
-
-```
-microservice-db [--backup]
-
-  --backup   Habilita el ciclo de backups automáticos cada N minutos.
-             Requiere MICROSERVICEDB_BACKUP_DIR y 7z disponible.
+```powershell
+.\target\release\microservice-db.exe generate-api-key
 ```
 
-## 🌐 Endpoints HTTP
+`scripts/build/build_windows.ps1` compila en release y copia el binario como `MicroserviceDB.exe`.
 
-MicroserviceDB solo expone 3 rutas HTTP; toda la operativa real se realiza vía WebSocket:
+---
 
-| Ruta     | Método          | Descripción                                                                                             |
-| -------- | --------------- | ------------------------------------------------------------------------------------------------------- |
-| `/`      | `GET`           | Devuelve el **Panel Administrativo Web** embebido (`MicroserviceDB.html`)                               |
-| `/ws`    | `GET` (Upgrade) | **Endpoint WebSocket principal** por donde viajan todas las queries                                     |
-| `/event` | `POST`          | Endpoint de depuración del panel UI. Acepta JSON y lo loguea a nivel `debug`, devuelve `204 No Content` |
+## Conectarse con un administrador de bases de datos
 
-## 🔌 API WebSocket
+Las contraseñas están en `scripts/install/.env`.
 
-Conecta a `ws://<host>:3329/ws` (o `wss://` si TLS está activado). El protocolo es JSON sobre mensajes de texto.
+### MongoDB (Navicat, Compass, Studio 3T, DBeaver)
 
-### Formato de Petición
+| Campo | Valor |
+|---|---|
+| Tipo | Standalone (el mongos se comporta como un servidor único) |
+| Host | `localhost` |
+| Puerto | `27017` (o `27020` para el segundo mongos) |
+| Autenticación | Password |
+| Base de autenticación | `admin` |
+| Usuario | `admin` |
+| Contraseña | `MONGO_ADMIN_PASSWORD` |
+| TLS | No |
 
-```jsonc
+Como URI:
+
+```
+mongodb://admin:<MONGO_ADMIN_PASSWORD>@localhost:27017,localhost:27020/?authSource=admin
+```
+
+Conéctate siempre a los mongos. Los puertos de los shards (`27101`…) solo ven una parte de los datos.
+
+### Dragonfly (RedisInsight, Another Redis Desktop Manager)
+
+| Campo | Valor |
+|---|---|
+| Host / puerto | `localhost:6379` |
+| Usuario | vacío (o `default`) |
+| Contraseña | `DRAGONFLY_PASSWORD` |
+| Base | `0` |
+
+```
+redis://:<DRAGONFLY_PASSWORD>@localhost:6379/0
+```
+
+Dragonfly solo tiene caché y metadatos del autoindexado; los nombres de base y colección van codificados en hexadecimal dentro de las claves. Borrar claves no pierde datos; no las edites a mano.
+
+---
+
+## Autenticación y roles
+
+Toda conexión (WebSocket, gRPC y panel) necesita una API key. Si no hay ninguna configurada, el servidor no arranca, salvo con `MICROSERVICEDB_AUTH=disabled` (solo para desarrollo local).
+
+| Variable | Descripción |
+|---|---|
+| `MICROSERVICEDB_AUTH` | `required` (por defecto) o `disabled` |
+| `MICROSERVICEDB_ADMIN_API_KEY` | Key de administrador en claro, mínimo 32 caracteres |
+| `MICROSERVICEDB_API_KEYS_FILE` | JSON con más keys y sus roles; solo guarda el SHA-256 de cada key |
+
+```json
+{"keys": [
+  {"name": "reportes",    "sha256": "<hex>", "roles": [{"role": "read",      "database": "shop"}]},
+  {"name": "svc-pedidos", "sha256": "<hex>", "roles": [{"role": "readWrite", "database": "shop", "collection": "orders"}]},
+  {"name": "dba-shop",    "sha256": "<hex>", "roles": [{"role": "dbAdmin",   "database": "shop"}]}
+]}
+```
+
+| Rol | Permite | Alcance |
+|---|---|---|
+| `read` | `find`, `findOne`, `exportCollection`, `exportDatabase`, `listIndexes`, `list_collections`, eventos | base o colección (`*` = todas) |
+| `readWrite` | lo anterior + `insertOne`, `updateOne`, `replaceOne`, `deleteOne`, `deleteMany`, `updateCollection`, `importCollection` | base o colección |
+| `dbAdmin` | lo anterior + `createCollection`, `deleteCollection`, `renameCollection`, `importDatabase`, `createIndex` | base |
+| `admin` | todo, incluido `createDatabase`, `deleteDatabase`, `renameDatabase` | global |
+
+- `list_databases` y los eventos de cambio solo muestran lo que la key puede leer.
+- Cada acceso denegado queda en el log como `auth_denied`.
+- Para añadir o revocar keys hay que reiniciar el servicio.
+
+Cómo se envía la key:
+
+| Transporte | Forma |
+|---|---|
+| WebSocket | `ws://host:3329/ws?api_key=<key>` o cabecera `Authorization: Bearer <key>` / `x-api-key` |
+| gRPC | metadato `authorization: Bearer <key>` o `x-api-key` |
+| Panel web | la pide al abrir y la guarda solo en esa pestaña |
+| Clientes TS/Rust | opción `apiKey` / `api_key` o variable `MICROSERVICEDB_API_KEY` |
+
+---
+
+## TLS
+
+Con `MICROSERVICEDB_SSL_CERT` y `MICROSERVICEDB_SSL_KEY` (PEM) el panel y el WebSocket pasan a HTTPS/WSS y gRPC usa TLS con el mismo certificado. Sin certificado todo va en texto plano, incluida la API key.
+
+Clientes:
+
+- gRPC con TLS si la dirección empieza por `https://` o `MICROSERVICEDB_GRPC_TLS=true`.
+- WebSocket seguro con `wss://` en `MICROSERVICEDB_DATABASE_WS_URL`.
+- CA propia (certificados autofirmados): `MICROSERVICEDB_TLS_CA_FILE`, o `tlsCa` / `tls_ca_file`. En Node, para WSS añade `NODE_EXTRA_CA_CERTS`.
+
+Dentro del compose, el tráfico entre nodos de MongoDB y hacia Dragonfly va por la red interna de Docker, sin TLS.
+
+---
+
+## Configuración
+
+### Variables de entorno
+
+| Variable | Por defecto | Descripción |
+|---|---|---|
+| `MICROSERVICEDB_MONGODB_URI` | — (obligatoria) | URI de MongoDB (standalone, replica set o mongos) |
+| `MICROSERVICEDB_DRAGONFLY_URL` | — | URI de Dragonfly/Redis. Sin ella no hay caché ni autoindexado |
+| `MICROSERVICEDB_PORT` | `3329` | Puerto HTTP/WebSocket |
+| `MICROSERVICEDB_GRPC_PORT` | `PORT + 1` | Puerto gRPC |
+| `MICROSERVICEDB_PROFILE` | `production` | `production`, `local`, `dev` (ver abajo) |
+| `MICROSERVICEDB_LOG_LEVEL` | según perfil | `error`, `warn`, `info`, `debug`, `trace` |
+| `MICROSERVICEDB_MONGODB_CONNECT_TIMEOUT_SECS` | según perfil | Timeout de conexión |
+| `MICROSERVICEDB_MONGODB_SERVER_SELECTION_TIMEOUT_SECS` | según perfil | Timeout de selección de servidor |
+| `MICROSERVICEDB_MONGODB_MAX_POOL_SIZE` | según perfil | Conexiones máximas a MongoDB |
+| `MICROSERVICEDB_MONGODB_WRITE_CONCERN` | `majority` | `majority` o número de nodos |
+| `MICROSERVICEDB_MONGODB_JOURNAL` | `true` | Exigir journal en cada escritura |
+| `REQUEST_CACHE_TTL_SECS` | `300` | Vida de la caché de respuestas |
+| `DOC_CACHE_TTL_SECS` | `300` | Vida de la caché de documentos |
+| `MICROSERVICEDB_AUTOINDEX_THRESHOLD` | `50` | Consultas sobre un campo para crear su índice |
+| `MICROSERVICEDB_AUTOINDEX_WINDOW_SECS` | `600` | Ventana en la que se cuentan esas consultas |
+| `MICROSERVICEDB_AUTOINDEX_DROP_IDLE_SECS` | `86400` | Un autoíndice sin uso este tiempo se borra |
+| `MICROSERVICEDB_AUTOINDEX_REVIEW_SECS` | `600` | Cada cuánto se revisan los autoíndices (mín. 60) |
+| `MICROSERVICEDB_AUTOINDEX_MIN_DOCS` | `1000` | Colecciones más pequeñas no reciben autoíndices |
+| `MICROSERVICEDB_AUTOINDEX_SAMPLE_SIZE` | `1000` | Documentos muestreados para medir selectividad |
+| `MICROSERVICEDB_AUTOINDEX_MAX_MATCH_RATIO` | `0.10` | Fracción máxima de la colección que puede devolver una igualdad para que el índice valga la pena |
+| `MICROSERVICEDB_BACKUP_DIR` | — | Carpeta de backups (necesaria con `--backup`) |
+| `MICROSERVICEDB_BACKUP_INTERVAL_MINS` | `30` | Intervalo de backups |
+| `MICROSERVICEDB_SSL_CERT` / `MICROSERVICEDB_SSL_KEY` | — | Certificado y llave PEM (activan TLS) |
+| `MICROSERVICEDB_AUTH`, `MICROSERVICEDB_ADMIN_API_KEY`, `MICROSERVICEDB_API_KEYS_FILE` | — | Ver [Autenticación](#autenticación-y-roles) |
+
+### Perfiles
+
+| Perfil | Timeout conexión | Timeout selección | Pool | Log |
+|---|---|---|---|---|
+| `production` (por defecto) | 300 s | 300 s | 20 | `info` |
+| `local` | 30 s | 15 s | 10 | `debug` |
+| `dev` | 10 s | 5 s | 5 | `trace` |
+
+Cualquier variable explícita tiene prioridad sobre el perfil.
+
+### Argumentos
+
+| Argumento | Descripción |
+|---|---|
+| `--port <n>` o primer argumento numérico | Puerto HTTP/WebSocket |
+| `--backup [true\|false]` | Activa el agente de backups |
+| `generate-api-key` | Imprime una key nueva y su SHA-256, y sale |
+
+---
+
+## API
+
+El WebSocket y gRPC aceptan las mismas peticiones y dan las mismas respuestas.
+
+### WebSocket
+
+Un mensaje JSON por petición; las respuestas llegan en el mismo orden.
+
+```json
 {
-  "type": "request", // "request" | "metadata" | "list_databases" | "list_collections" | "subscribe" | …
-  "category": "collection", // "collection" | "database"   (solo para type=request)
-  "function_name": "find", // nombre de la operación      (solo para type=request)
-  "database_name": "ventas", // contexto de base de datos
-  "collections": ["clientes"], // contexto múltiple (opcional)
+  "type": "action",
+  "category": "collection",
+  "function_name": "find",
   "payload": {
-    "collection_name": "clientes",
-    "filter": { "pais": "MX" },
-    "options": { "sort": { "creado": -1 }, "limit": 50 },
-  },
+    "database_name": "shop",
+    "collectionName": "items",
+    "filter": { "price": { "$gte": 10 } },
+    "projection": { "data": 0 },
+    "sort": { "price": -1 },
+    "skip": 0,
+    "limit": 50
+  }
 }
 ```
 
-### Formato de Respuesta
+Respuesta:
 
-```jsonc
+```json
+{ "success": true, "response_json": "[...]", "message": "OK" }
+```
+
+`response_json` es texto JSON. Si `success` es `false`, el error está en `message`.
+
+Los cambios de otros clientes llegan solos al mismo socket con `"kind": "change"` (campos `event`, `database_name`, `collectionName`, `before`, `after`, `summary`, `ts`), filtrados por lo que la key puede leer.
+
+### Tipos de petición
+
+| `type` | Uso |
+|---|---|
+| `action` | Operación; requiere `category` y `function_name` |
+| `metadata` | Funciones y eventos disponibles |
+| `list_databases` | Bases visibles para la key |
+| `list_collections` | Colecciones de `database_name` |
+| `precache` | Precarga en caché las `collections` de `database_name` |
+
+### Funciones de colección (`category: "collection"`)
+
+Todas llevan `database_name` y `collectionName` en el `payload`.
+
+| Función | Payload | Respuesta |
+|---|---|---|
+| `find` | `filter`, `projection`, `sort`, `skip`, `limit` | lista de documentos |
+| `findOne` | `filter` (o `query`), `projection`, `sort` | documento o `null` |
+| `insertOne` | `document` | `insertedId` (se genera un ObjectId si falta `_id`) |
+| `updateOne` | `filter`, `update` (`$set`, `$inc`, `$setOnInsert`…), `options.upsert` | `matchedCount`, `modifiedCount`, `upsertedId` |
+| `replaceOne` | `filter`, `replacement`, `options.upsert` | igual que `updateOne` |
+| `deleteOne` | `filter` | `deletedCount` |
+| `deleteMany` | `filter` | `deletedCount` |
+| `updateCollection` | `data` (upsert por `_id`) o `filter` + `update` | `insertedCount` / `matchedCount`, `modifiedCount` |
+| `exportCollection` | — | todos los documentos |
+| `importCollection` | `data`, `mode`: `merge` (por defecto), `append`, `replace` | `insertedCount`, `modifiedCount` |
+| `listIndexes` | — | `indexes` (ver [Índices](#índices-y-autoindexado)) |
+| `createIndex` | `keys: [{field, type}]`, `options` | `name`, `replacedAutoIndex` |
+
+Los filtros aceptan la sintaxis de MongoDB (`$and`, `$or`, `$nor`, `$not`, `$in`, `$regex` con `$options`, `$exists`, campos anidados con punto…). Un `_id` enviado como texto también encuentra el ObjectId equivalente.
+
+### Funciones de base de datos (`category: "database"`)
+
+| Función | Payload |
+|---|---|
+| `createDatabase` | `database_name` |
+| `deleteDatabase` | `database_name` |
+| `renameDatabase` | `database_name`, `new_database_name` |
+| `createCollection` | `database_name`, `collectionName` |
+| `deleteCollection` | `database_name`, `collectionName` |
+| `renameCollection` | `database_name`, `collectionName`, `new_collection_name` |
+| `exportDatabase` | `database_name` |
+| `importDatabase` | `database_name`, `data` (`{colección: [docs]}`), `mode`: `replace` (por defecto) o `merge` |
+
+### gRPC
+
+Servicio `microservicedb.DatabaseService` en `proto/microservicedb.proto`:
+
+| Método | Uso |
+|---|---|
+| `Action` | Cualquier petición anterior: `msg_type`, `category`, `function_name` y `payload_json` (el payload como texto JSON) |
+| `StreamChanges` | Flujo de eventos; filtros `database_name`, `collection_name`, `include_system` |
+| `ExportCollectionStream` | Exporta una colección por lotes (`batch_size`, `filter_json`); envía el primer lote sin esperar al resto |
+
+El servidor no tiene reflection, así que `grpcurl` y Postman necesitan el `.proto`:
+
+```powershell
+grpcurl -plaintext -import-path proto -proto microservicedb.proto -H "authorization: Bearer $env:KEY" -d '{\"category\":\"collection\",\"function_name\":\"findOne\",\"payload_json\":\"{\\\"database_name\\\":\\\"shop\\\",\\\"collectionName\\\":\\\"items\\\",\\\"filter\\\":{}}\"}' localhost:3330 microservicedb.DatabaseService/Action
+```
+
+### Postman
+
+- **WebSocket:** New → WebSocket, URL `ws://localhost:3329/ws`, cabecera `x-api-key`, mensajes de texto con el JSON de arriba.
+- **gRPC:** New → gRPC, URL `localhost:3330`, importa `proto/microservicedb.proto`, metadato `authorization: Bearer <key>`.
+
+---
+
+## Índices y autoindexado
+
+Los índices viven **solo en MongoDB**. Dragonfly guarda caché y los contadores del autoindexado, no índices sobre los datos.
+
+| Tipo | Quién lo crea | Quién lo borra |
+|---|---|---|
+| `_id_` | MongoDB | nadie |
+| Manual | `createIndex` o el panel | nadie desde el servicio; el autoindexado nunca los toca |
+| Automático `mdb_auto_<campo>` | el autoindexado | el autoindexado |
+
+**Cómo funciona el autoindexado:**
+
+1. Cada consulta suma uso a los campos de su filtro.
+2. Cuando un campo pasa `AUTOINDEX_THRESHOLD` consultas en la ventana, se mide su selectividad con una muestra; si una igualdad devolvería más de `AUTOINDEX_MAX_MATCH_RATIO` de la colección, o la colección tiene menos de `AUTOINDEX_MIN_DOCS` documentos, no se crea.
+3. En cada revisión se borran los autoíndices sin uso durante `AUTOINDEX_DROP_IDLE_SECS`, los que dejaron de ser eficientes y los huérfanos.
+4. Si ya existe un índice manual sobre ese campo, el autoindexado lo usa pero nunca lo borra.
+
+**Crear un índice manual:**
+
+```json
 {
-  "success": true,
-  "message": "OK",
-  "response_json": "{ ...respuesta serializada... }",
+  "type": "action", "category": "collection", "function_name": "createIndex",
+  "payload": {
+    "database_name": "shop", "collectionName": "items",
+    "keys": [{ "field": "cliente.id", "type": 1 }, { "field": "price", "type": -1 }],
+    "options": { "name": "cliente_price", "unique": false, "sparse": false,
+                 "expireAfterSeconds": null, "partialFilterExpression": null }
+  }
 }
 ```
 
-Deserializa `response_json` para obtener el cuerpo de la operación (array de documentos, `InsertOneResult`, conteo, etc.).
+- `type`: `1`, `-1`, `"text"`, `"hashed"`, `"2dsphere"`, `"2d"`.
+- `keys` es una lista porque el orden importa en los índices compuestos.
+- Los nombres que empiezan por `mdb_auto_` están reservados.
+- Si ya hay un autoíndice con las mismas claves, el manual lo sustituye (MongoDB no permite dos índices con las mismas claves).
 
-### Comandos de `type`
+---
 
-| `type`             | Descripción                                                                |
-| ------------------ | -------------------------------------------------------------------------- |
-| `metadata`         | Devuelve el catálogo de funciones, eventos y capacidades del servidor.     |
-| `list_databases`   | Array con los nombres de todas las bases de datos.                         |
-| `list_collections` | Requiere `database_name`. Array con nombres de colecciones.                |
-| `request`          | Ejecuta una operación CRUD/administrativa en `category` + `function_name`. |
+## Caché
 
-### Categoría `collection`
+| Caché | Qué guarda | Se llena | Se vacía |
+|---|---|---|---|
+| Documentos | cada documento por `_id` | al insertar o actualizar (write-through) y al leer | al borrar, o al pasar `DOC_CACHE_TTL_SECS` |
+| Respuestas | la respuesta completa de `find`, `findOne`, exportaciones y listados | en la primera petición | en cualquier escritura sobre esa base, o al pasar `REQUEST_CACHE_TTL_SECS` |
 
-Requieren `payload.collection_name` y `database_name` (por mensaje o global).
+Las búsquedas por `_id` exacto se resuelven en la caché de documentos; el resto de consultas van a MongoDB con filtro, orden, `skip` y `limit` del lado del servidor.
 
-| `function_name`    | Payload (mínimo)                                                  | Salida (en `response_json`)                                  |
-| ------------------ | ----------------------------------------------------------------- | ------------------------------------------------------------ |
-| `find`             | `{ filter, options? }` — options: `sort, projection, limit, skip` | `Document[]`                                                 |
-| `findOne`          | `{ filter?, options? }`                                           | `Document \| null`                                           |
-| `insertOne`        | `{ document }`                                                    | `{ acknowledged, insertedId }`                               |
-| `updateOne`        | `{ filter, update, upsert? }`                                     | `{ acknowledged, matchedCount, modifiedCount, upsertedId? }` |
-| `replaceOne`       | `{ filter, replacement, upsert? }`                                | idem `updateOne`                                             |
-| `deleteOne`        | `{ filter }`                                                      | `{ acknowledged, deletedCount }`                             |
-| `deleteMany`       | `{ filter }`                                                      | `{ acknowledged, deletedCount }`                             |
-| `updateCollection` | `{ updates: [{ filter, update }…] }`                              | Lote de `updateOne`                                          |
-| `exportCollection` | `{ format?: "json" }`                                             | JSON serializado de todos los documentos                     |
-| `importCollection` | `{ data \| documents \| docs \| items: [...] }`                   | `{ insertedCount, errors? }`                                 |
+---
 
-### Categoría `database`
+## Librerías cliente
 
-Requieren `database_name`.
+### TypeScript (`lib/typescript`)
 
-| `function_name`    | Payload                                   | Descripción                                                                    |
-| ------------------ | ----------------------------------------- | ------------------------------------------------------------------------------ |
-| `createDatabase`   | `{ new_database_name, collection_name? }` | Crea la BD (y una colección inicial opcional) insertando un documento semilla. |
-| `deleteDatabase`   | —                                         | Elimina la base de datos y todas sus colecciones.                              |
-| `renameDatabase`   | `{ new_database_name }`                   | Copia todas las colecciones al nuevo nombre y elimina la vieja.                |
-| `createCollection` | `{ collection_name, validator? }`         | Crea una colección nueva.                                                      |
-| `deleteCollection` | `{ collection_name }`                     | Elimina la colección y sus índices.                                            |
-| `renameCollection` | `{ from, to }`                            | Renombra una colección dentro de la misma BD.                                  |
-| `exportDatabase`   | `{ format?: "json" }`                     | JSON `{ "<colección>": Document[] }` completo.                                 |
-| `importDatabase`   | `{ data: { "<colección>": Document[] } }` | Importa en masa todas las colecciones del payload.                             |
-
-### Eventos (change-stream)
-
-Cuando una mutación (`insertOne`, `updateOne`, `replaceOne`, `deleteOne`, `deleteMany`, creación/renombre/eliminación de BD o colección) se confirma, el **servidor broadcast** a todos los clientes conectados un mensaje con:
-
-```jsonc
-{
-  "success": true,
-  "message": "change_event",
-  "response_json": {
-    "event": "insertOne", // "updateOne" | "replaceOne" | "deleteOne" | "deleteMany" | "createDatabase" | …
-    "category": "collection", // "collection" | "database"
-    "database_name": "ventas",
-    "collectionName": "clientes", // cuando aplica
-    "ts": 1720000000000,
-    "summary": { "insertedId": "68a…" },
-    "before": {
-      /* documento antes, cuando aplica */
-    },
-    "after": {
-      /* documento después, cuando aplica */
-    },
-  },
-}
+```powershell
+cd lib/typescript
+npm install
+npm run build
 ```
 
-En TypeScript puedes suscribirte con `MicroserviceDBAPI#addChangeListener(listener)`.
+```ts
+import MicroserviceDBAPI from './MicroserviceDBAPI';
 
-## 📦 Librerías Cliente
-
-### TypeScript / Browser / Node.js
-
-> Archivo: [`lib/typescript/MicroserviceDBAPI.ts`](lib/typescript/MicroserviceDBAPI.ts)
-
-Características:
-
-- Singleton por BD (`getInstance`).
-- Reconexión automática con **reintento exponencial** y re-autenticación de suscripciones.
-- Cacheo local de `find()` y pre-carga en caliente de colecciones indicadas en el constructor.
-- Change-listeners tipados.
-
-```typescript
-import MicroserviceDBAPI from "./lib/typescript/MicroserviceDBAPI";
-
-const db = MicroserviceDBAPI.getInstance("ventas", ["clientes", "pedidos"]);
-await db.ready;
-
-const clientes = await db.find("clientes", { pais: "MX" }, { limit: 50 });
-const insertado = await db.insertOne("clientes", {
-  nombre: "ACME",
-  pais: "MX",
+const db = new MicroserviceDBAPI('shop', [], {
+    transport: 'grpc',            // o 'websocket' (por defecto)
+    grpcAddress: 'localhost:3330',
+    apiKey: process.env.MICROSERVICEDB_API_KEY,
 });
 
-db.addChangeListener((ev) => {
-  console.log(`[${ev.collectionName}] ${ev.event}`, ev.after);
-});
+await db.insertOne('items', { sku: 'A-1', price: 5 });
+const items = await db.find('items', { price: { $gte: 5 } });
+const one = await db.findOne('items', { sku: 'A-1' });
+await db.updateOne('items', { sku: 'A-1' }, { $inc: { price: 1 } });
+await db.deleteOne('items', { sku: 'A-1' });
+
+const unsubscribe = db.subscribe((ev) => console.log(ev.event, ev.collectionName));
+await db.exportCollectionStream('items', (batch) => console.log(batch.sent, '/', batch.total)); // solo gRPC
+db.close();
 ```
 
-Métodos disponibles: `find`, `findOne`, `insertOne`, `updateOne`, `replaceOne`, `deleteOne`, `deleteMany`, `updateCollection`, `exportCollection`, `importCollection`, `listCollections`, `createDatabase`, `deleteDatabase`, `renameDatabase`, `createCollection`, `deleteCollection`, `renameCollection`, `exportDatabase`, `importDatabase`.
+Variables: `MICROSERVICEDB_TRANSPORT`, `MICROSERVICEDB_API_KEY`, `MICROSERVICEDB_DATABASE_WS_URL`, `MICROSERVICEDB_DATABASE_GRPC_ADDRESS`, `MICROSERVICEDB_GRPC_TLS`, `MICROSERVICEDB_TLS_CA_FILE`.
 
-### Rust
+### Rust (`lib/rust/MicroserviceDBAPI.rs`)
 
-> Archivo: [`lib/rust/MicroserviceDBAPI.rs`](lib/rust/MicroserviceDBAPI.rs)
+Dependencias del crate que lo use: `tokio` (full), `futures-util`, `serde` (derive), `serde_json`, `tokio-tungstenite`, `tonic = { version = "0.12", features = ["tls", "tls-native-roots"] }`, `prost = "0.13"`.
 
-Cliente Rust asíncrono con `tokio-tungstenite` / `tokio-native-tls` (ajusta el import TLS en entornos sin OpenSSL). Inspirado en la API TypeScript pero tipado con `serde_json::Value`.
-
-## 🖥️ Panel Administrativo Web
-
-Abre el navegador en `http(s)://<host>:3329/`. Incluye:
-
-- **Árbol lateral** de bases de datos y colecciones con búsqueda y contadores de documentos.
-- **Vista de colección** con tabla/paginación, previsualización JSON syntax-highlight y edición inline con formularios estructurados.
-- **Formularios** de inserción/actualización por campos (no edición JSON cruda).
-- **Panel de eventos** en tiempo real con el change-stream.
-- **Export/Import** JSON por colección o base de datos completa.
-- **Operaciones de administración**: crear/renombrar/eliminar bases y colecciones.
-- **Tema claro** de alta densidad, tipografías Plus Jakarta Sans + JetBrains Mono.
-
-El HTML completo se encuentra en la raíz: [`MicroserviceDB.html`](MicroserviceDB.html) y se embebe en el binario en tiempo de compilación.
-
-## 🧩 Caché y Auto-Indexado
-
-Si `MICROSERVICEDB_DRAGONFLY_URL` está presente, el servidor activa varias capas:
-
-1. **Caché de requests (L1):** cada `find`/`findOne`/`list_*` se indexa por (operación + db + collection + filtro + opciones). TTL configurable; en escrituras se invalida el árbol completo de la BD involucrada.
-2. **Caché de documentos (L2):** almacena documentos por `_id` para acelerar operaciones de `findOne` y actualizaciones intermedias.
-3. **Gestor de índices Redis:** registra qué índices MongoDB existen y reutiliza su metadata.
-4. **Auto-index manager:** observa patrones de uso frecuentes en `find`/`updateOne`/`deleteOne` y registra sugerencias de índices en Redis; el panel los muestra como recomendaciones.
-
-El mensaje `metadata` reporta `redis_first: true`, `auto_index: true` y `doc_cache: true` cuando todo está activo.
-
-## 💾 Backups Automáticos
-
-Lanza el proceso con `--backup` para habilitar el ciclo. Cada 30 minutos (configurable con `MICROSERVICEDB_BACKUP_INTERVAL_MINS`) el servidor:
-
-1. Crea una estructura `BACKUP_DIR/<YYYY-MM-DD>/<HH>/backup_[00|30]/`.
-2. Exporta todas las bases/colecciones a un único JSON.
-3. Lo comprime con 7-Zip (`LZMA2, mx=9, mfb=273, md=64m, ms=on`).
-4. Elimina el JSON temporal para ahorrar espacio.
-
-Requiere el ejecutable `7z` o `7za` accesible en el `PATH`.
-
-## 🛠️ Scripts Utilitarios
-
-| Ruta                                          | Descripción                                    |
-| --------------------------------------------- | ---------------------------------------------- |
-| `scripts/install/docker-compose.yml`          | Cluster Mongo sharded 3×3 + mongos + Dragonfly |
-| `scripts/install/docker-compose_windows.ps1`  | Envoltura Windows                              |
-| `scripts/install/docker-compose_linux_mac.sh` | Envoltura Unix                                 |
-| `scripts/build/build_windows.ps1`             | Build release + empaquetado (Windows)          |
-| `scripts/build/build_linux_mac.sh`            | Build release + empaquetado (Unix)             |
-| `scripts/dev/MicroserviceDB_MongoManager.py`  | Herramienta de manejo/seed de Mongo en Python  |
-
-## 🧰 Builds Multiplataforma
-
-```bash
-# Linux / macOS
-bash scripts/build/build_linux_mac.sh
-
-# Windows PowerShell
-scripts\build\build_windows.ps1
+```rust
+let opts = ClientOptions {
+    transport: Transport::Grpc,
+    grpc_address: Some("localhost:3330".into()),
+    api_key: Some(key),
+    tls_ca_file: None,
+};
+let db = MicroserviceDBAPI::with_options("shop", &[], opts);
+db.insert_one("items", json!({ "sku": "A-1" })).await?;
+let items = db.find("items", Some(json!({ "sku": "A-1" })), None).await?;
+db.close().await;
 ```
 
-El binario resultante lleva embebido el panel administrativo y no requiere archivos adicionales, salvo el `.env` (opcional; las variables se leen también del entorno del SO).
+---
 
-## 📄 Licencia
+## Panel web
 
-© Magnus Norgaard. Todos los derechos reservados. Consulta el documento PDF de la versión 2.0.0 (actualmente es la 1.0.0) en [`MicroserviceDB_v2.0.0.pdf`](MicroserviceDB_v2.0.0.pdf).
+En http://localhost:3329/ (pide la API key al abrir):
+
+- Árbol de bases y colecciones con filtro; se actualiza con **Refrescar** y con los eventos de otros clientes.
+- Consultas con constructor visual o JSON, proyección, orden, paginación, vista de lista y tabla.
+- Insertar, editar, clonar y borrar documentos; importar y exportar colecciones.
+- **Índices** (botón en la cabecera de la colección): manuales y de sistema marcados como no borrables, automáticos con su uso y fecha de retiro, y formulario para crear índices.
+- **Actividad**: los cambios en tiempo real, con el documento antes y después.
+
+---
+
+## Backups
+
+```powershell
+$env:MICROSERVICEDB_BACKUP_DIR = "D:\backups\microservicedb"
+.\target\release\microservice-db.exe --backup
+```
+
+Cada `MICROSERVICEDB_BACKUP_INTERVAL_MINS` exporta cada base a un archivo 7z (si `7z` está en el PATH; la imagen Docker lo incluye) o gzip. Los backups no van cifrados.
+
+---
+
+## Rendimiento
+
+Referencia medida en un portátil (Intel Core Ultra 7 155U, 16 GB) con el compose completo, archivos binarios guardados como base64 y escritura por mayoría. Todo corre en la misma máquina, así que las cifras sirven para comparar operaciones, no como capacidad de producción.
+
+| Operación | p50 |
+|---|---|
+| Insertar archivo de 10 KB / 1 MB / 4 MB | 33 ms / 193 ms / 1,2 s |
+| Leer 100 KB por `_id`: MongoDB / caché de documentos / caché de respuestas | 23 / 11 / 8 ms |
+| Consulta de 20 archivos con base64 / sin base64 (proyección) | 356 / 98 ms |
+| Rendimiento máximo (mezcla 70 % lectura / 30 % escritura, archivos de 20 KB) | ~80 ops/s con 8 usuarios |
+
+Recomendaciones que salen de esas pruebas:
+
+- En listados, excluye el contenido pesado (`projection: { data: 0 }`) y descarga cada archivo por `_id`.
+- Para importar, usa lotes de unos 250 documentos.
+- Para exportaciones grandes, usa `ExportCollectionStream` (gRPC): entrega el primer lote en milisegundos en lugar de esperar la respuesta completa.
+
+---
+
+## Solución de problemas
+
+| Síntoma | Causa probable |
+|---|---|
+| El servidor no arranca: «Authentication is required but no API keys are configured» | Falta `MICROSERVICEDB_ADMIN_API_KEY` o `MICROSERVICEDB_API_KEYS_FILE` |
+| El WebSocket devuelve 401 | Falta la key o es inválida |
+| gRPC `UNAUTHENTICATED` | Falta el metadato `authorization` |
+| gRPC `UNAVAILABLE` contra un servidor con TLS | El cliente se conecta sin TLS: usa `https://` o `MICROSERVICEDB_GRPC_TLS=true` |
+| `Permission denied: … requires role …` | La key es válida pero su rol no permite esa operación |
+| Navicat/Compass: «Authentication failed» | Falta la base de autenticación `admin` |
+| Redis: `NOAUTH Authentication required` | Falta la contraseña `DRAGONFLY_PASSWORD` |
+| Un cambio en `MicroserviceDB.html` no aparece en el panel | El HTML va dentro del binario: recompila (o reconstruye la imagen con `docker compose --profile app up -d --build microservicedb`) |
+
+---
+
+## Estructura del proyecto
+
+```
+.
+├── src/
+│   ├── main.rs              # servidor: WebSocket, gRPC, acciones, caché, autoindexado, backups
+│   └── auth.rs              # API keys y roles
+├── proto/microservicedb.proto
+├── MicroserviceDB.html      # panel web (se incrusta en el binario)
+├── lib/
+│   ├── typescript/          # cliente TS (WebSocket + gRPC)
+│   └── rust/                # cliente Rust (WebSocket + gRPC)
+├── scripts/
+│   ├── install/             # docker-compose.yml + instalador de Windows
+│   ├── build/               # build de release en Windows
+│   └── dev/mongodb_manager/ # herramienta web para exportar/copiar bases MongoDB
+├── Dockerfile
+└── build.rs                 # genera el código gRPC desde el .proto
+```
 
 <div align="center">
 
